@@ -37,6 +37,7 @@ export function SetupGuide({ metrics }: { metrics: MetricKey[] }) {
         </View>
       ))}
 
+      <Text style={[styles.pasteLabel, { color: accentColor }]}>{T.sqlPasteLabel}</Text>
       <CodeBlock code={sql} />
     </View>
   );
@@ -125,6 +126,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     color: colors.secondary,
+  },
+  pasteLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    textAlign: 'center',
+    marginTop: 10,
   },
   codeCard: {
     backgroundColor: colors.elevated,

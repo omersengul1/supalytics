@@ -43,6 +43,9 @@ async function rpc<T>(fn: string, args?: Record<string, unknown>): Promise<T> {
       throw new Error(T.errMissingRpc);
     }
     if (error.message === 'forbidden') throw new Error(T.errNotAdmin);
+    if (error.code === '42501' || /permission denied for function/i.test(error.message)) {
+      throw new Error(T.errPermissionDenied);
+    }
     throw new Error(error.message);
   }
   return data as T;

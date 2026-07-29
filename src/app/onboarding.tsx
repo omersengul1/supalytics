@@ -238,6 +238,7 @@ export default function Onboarding() {
               />
               <Field
                 label={T.fieldPassword}
+                help={T.fieldPasswordHelp}
                 value={password}
                 onChangeText={setPassword}
                 placeholder="••••••••"

@@ -13,6 +13,17 @@ import { colors, radius, useTheme } from '@/lib/theme';
 // (expo-router vendorladı); tipi Tabs bileşeninden söküyoruz.
 type TabBarProps = Parameters<NonNullable<ComponentProps<typeof Tabs>['tabBar']>>[0];
 
+// iOS 26 Liquid Glass henüz her istemcide (ör. Expo Go'nun derlendiği an bu native
+// modülü içermiyorsa) yok — bu durumda native çağrı "Cannot find native module" fırlatır.
+// Yakalayıp düz BlurView'a düşüyoruz; çökme yerine sessiz geri çekilme.
+function safeIsLiquidGlassAvailable(): boolean {
+  try {
+    return isLiquidGlassAvailable();
+  } catch {
+    return false;
+  }
+}
+
 const ICONS: Record<string, { symbol: SFSymbol; fallback: string }> = {
   index: { symbol: 'chart.bar.fill', fallback: '▦' },
   users: { symbol: 'person.2.fill', fallback: '◉' },
@@ -23,7 +34,7 @@ const ICONS: Record<string, { symbol: SFSymbol; fallback: string }> = {
 export function GlassTabBar({ state, descriptors, navigation }: TabBarProps) {
   const { accentColor } = useTheme();
   const insets = useSafeAreaInsets();
-  const glass = isLiquidGlassAvailable();
+  const glass = safeIsLiquidGlassAvailable();
 
   const row = (
     <View style={styles.row}>

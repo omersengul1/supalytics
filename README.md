@@ -55,6 +55,8 @@ Hiçbir şey bağlamadan tüm arayüz deterministik sahte veriyle gezilebilir (s
 ## Bilinen sınırlar
 
 - Expo Go'da `ExpoSecureStore... is not a function` benzeri bir hata görürseniz telefonunuzdaki **Expo Go güncel değil** demektir — mağazadan güncelleyin. Uygulama bu durumda çökmez: demo modu tam çalışır, gerçek bağlantı ise sırları kaydedemeyeceğini söyleyip durur.
+- Alt sekme çubuğu iOS 26'nın Liquid Glass efektini (`expo-glass-effect`) dener; bu native modül Expo Go istemcinizde henüz yoksa uygulama sessizce düz bulanıklaştırma (blur) tasarımına düşer — çökmez.
+- "permission denied for function ..." hatası görürseniz kurulum script'i eksik/kısmi çalışmış demektir: script'i en baştan sona (en alttaki `>>> EDIT ME` dahil) SQL Editor'e yeniden yapıştırıp çalıştırın.
 
 - `expo-secure-store` Android'de 2048 bayttan büyük değerlerde uyarı verir; Supabase oturum JSON'u büyüyebilir. Şimdilik çalışır; v2'de oturum şifreli depolamaya taşınabilir.
 - Arşivlenen giriş kayıtlarındaki `user_agent`, giriş anına yakın `auth.sessions` kaydından alınır; oturum arşivden önce silindiyse cihaz "Bilinmiyor" düşer.

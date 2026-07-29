@@ -3,7 +3,6 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "dependencies": {
-    "@expo/ui": "~57.0.7",
     "@supabase/supabase-js": "^2.111.0",
     "expo": "~57.0.8",
     "expo-blur": "~57.0.2",
