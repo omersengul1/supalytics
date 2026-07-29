@@ -21,6 +21,7 @@ import {
   providerLabel,
   timeAgo,
 } from '@/lib/format';
+import { T } from '@/lib/i18n';
 import { usePrefs } from '@/lib/prefs-context';
 import { colors, radius, type as t, useTheme } from '@/lib/theme';
 import type {
@@ -45,22 +46,20 @@ export default function Overview() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const metricSet = useMemo(() => new Set(prefs.metrics), [prefs.metrics]);
+
+  // Yalnızca seçili metriklerin verisi çekilir: seçilmeyen metrik, kurulumda
+  // SQL'i atlanmış olabilir — boşuna RPC hatası üretmeyelim.
   const load = useCallback(async () => {
-    const results = await Promise.allSettled([
-      fetchTotals(),
-      fetchDauSeries(30),
-      fetchSignupSeries(30),
-      fetchProviders(),
-      fetchDevices(30),
-      fetchActivity(8),
-    ]);
-    const [rTotals, rDau, rSignups, rProviders, rDevices, rActivity] = results;
-    if (rTotals.status === 'fulfilled') setTotals(rTotals.value);
-    if (rDau.status === 'fulfilled') setDau(rDau.value);
-    if (rSignups.status === 'fulfilled') setSignups(rSignups.value);
-    if (rProviders.status === 'fulfilled') setProviders(rProviders.value);
-    if (rDevices.status === 'fulfilled') setDevices(rDevices.value);
-    if (rActivity.status === 'fulfilled') setActivity(rActivity.value);
+    const jobs: Promise<void>[] = [fetchTotals().then(setTotals)];
+    if (metricSet.has('active')) jobs.push(fetchDauSeries(30).then(setDau));
+    if (metricSet.has('signups')) jobs.push(fetchSignupSeries(30).then(setSignups));
+    if (metricSet.has('providers')) jobs.push(fetchProviders().then(setProviders));
+    if (metricSet.has('devices') || metricSet.has('sessions'))
+      jobs.push(fetchDevices(30).then(setDevices));
+    if (metricSet.has('activity')) jobs.push(fetchActivity(8).then(setActivity));
+
+    const results = await Promise.allSettled(jobs);
     const firstError = results.find(
       (r): r is PromiseRejectedResult => r.status === 'rejected',
     );
@@ -68,10 +67,10 @@ export default function Overview() {
       firstError
         ? firstError.reason instanceof Error
           ? firstError.reason.message
-          : 'Veriler alınamadı.'
+          : T.errFetchGeneric
         : null,
     );
-  }, []);
+  }, [metricSet]);
 
   useEffect(() => {
     load();
@@ -88,9 +87,11 @@ export default function Overview() {
     return pctDelta(dau[dau.length - 1].users, dau[dau.length - 2].users);
   }, [dau]);
 
+  // Hero seçime uyar: aktiflik izlenmiyorsa toplam kullanıcı gösterilir.
+  const heroIsActive = metricSet.has('active');
+
   const cards = useMemo(() => {
     const list: React.ReactNode[] = [];
-    const metricSet = new Set(prefs.metrics);
     const topProvider = [...providers].sort((a, b) => b.users - a.users)[0];
     const providerTotal = providers.reduce((sum, p) => sum + p.users, 0);
     const topDevice = [...devices].sort((a, b) => b.sessions - a.sessions)[0];
@@ -101,15 +102,15 @@ export default function Overview() {
       <View key="active" style={styles.gridRowGroup}>
         <MetricCard
           style={styles.half}
-          label="Haftalık aktif"
+          label={T.cardWeeklyActive}
           value={compact(totals.wau)}
-          sub={`Ay: ${compact(totals.mau)}`}
+          sub={T.cardMonthSub(compact(totals.mau))}
         />
         <MetricCard
           style={styles.half}
-          label="Bağlılık"
+          label={T.cardEngagement}
           value={totals.mau > 0 ? `${Math.round((totals.dau / totals.mau) * 100)}%` : '—'}
-          sub="DAU / MAU"
+          sub={T.cardEngagementSub}
         />
       </View>
     );
@@ -118,25 +119,25 @@ export default function Overview() {
       <View key="signups" style={styles.gridRowGroup}>
         <MetricCard
           style={styles.full}
-          label="Yeni kayıtlar · 30 gün"
+          label={T.cardSignups30}
           value={compact(signupTotal)}
-          sub={`+${compact(totals.new_week)} bu hafta · +${compact(totals.new_today)} bugün`}
+          sub={T.cardSignupsSub(compact(totals.new_week), compact(totals.new_today))}
           subTone="accent"
         >
           <Sparkline data={signups.map((p) => p.users)} height={56} />
         </MetricCard>
         <MetricCard
           style={styles.half}
-          label="Kayıtlı kullanıcı"
+          label={T.cardTotalUsers}
           value={compact(totals.total_users)}
-          sub="toplam hesap"
+          sub={T.cardTotalUsersSub}
         />
         {metricSet.has('sessions') ? (
           <MetricCard
             style={styles.half}
-            label="Oturumlar"
+            label={T.cardSessions}
             value={compact(sessionTotal)}
-            sub="30 günde"
+            sub={T.cardSessionsSub}
           />
         ) : null}
       </View>
@@ -146,7 +147,7 @@ export default function Overview() {
       <MetricCard
         key="providers"
         style={styles.half}
-        label="En çok sağlayıcı"
+        label={T.cardTopProvider}
         value={`${Math.round((topProvider.users / providerTotal) * 100)}%`}
         sub={providerLabel(topProvider.provider)}
       />
@@ -156,7 +157,7 @@ export default function Overview() {
       <MetricCard
         key="devices"
         style={styles.half}
-        label="En çok cihaz"
+        label={T.cardTopDevice}
         value={`${Math.round((topDevice.sessions / sessionTotal) * 100)}%`}
         sub={deviceLabel(topDevice.device)}
       />
@@ -166,9 +167,9 @@ export default function Overview() {
       <MetricCard
         key="sessions"
         style={styles.half}
-        label="Oturumlar"
+        label={T.cardSessions}
         value={compact(sessionTotal)}
-        sub="30 günde"
+        sub={T.cardSessionsSub}
       />
     );
 
@@ -186,7 +187,7 @@ export default function Overview() {
       list.push(activeCards, signupCards, tail);
     }
     return list;
-  }, [prefs.metrics, prefs.focus, totals, signups, providers, devices]);
+  }, [metricSet, prefs.focus, totals, signups, providers, devices]);
 
   return (
     <ScrollView
@@ -203,42 +204,48 @@ export default function Overview() {
         <Text style={styles.wordmark}>supalytics</Text>
         {prefs.demoMode ? (
           <View style={styles.demoBadge}>
-            <Text style={[t.caption, { color: colors.secondary }]}>DEMO</Text>
+            <Text style={[t.caption, { color: colors.secondary }]}>{T.demoBadge}</Text>
           </View>
         ) : null}
       </View>
 
       <View style={styles.hero}>
         <View style={styles.heroLabelRow}>
-          <Text style={[t.label, styles.heroLabel]}>BUGÜN AKTİF</Text>
+          <Text style={[t.label, styles.heroLabel]}>
+            {heroIsActive ? T.heroActive : T.heroUsers}
+          </Text>
           <PulseDot />
         </View>
-        <Text style={t.hero}>{totals ? compact(totals.dau) : '—'}</Text>
-        {delta !== null ? (
-          <Text
-            style={[
-              t.label,
-              { color: delta >= 0 ? accentColor : colors.danger },
-            ]}
-          >
-            {delta >= 0 ? '↑' : '↓'} {Math.abs(delta)}% düne göre
+        <Text style={t.hero}>
+          {totals ? compact(heroIsActive ? totals.dau : totals.total_users) : '—'}
+        </Text>
+        {heroIsActive && delta !== null ? (
+          <Text style={[t.label, { color: delta >= 0 ? accentColor : colors.danger }]}>
+            {T.deltaVsYesterday(`${delta >= 0 ? '↑' : '↓'} ${Math.abs(delta)}%`)}
+          </Text>
+        ) : null}
+        {!heroIsActive && totals ? (
+          <Text style={[t.label, { color: accentColor }]}>
+            {T.newTodaySub(compact(totals.new_today))}
           </Text>
         ) : null}
       </View>
 
       {error ? (
-        <Text style={[t.caption, { color: colors.danger, marginBottom: 12 }]}>{error}</Text>
+        <Text style={[t.caption, { color: colors.danger, marginBottom: 12, lineHeight: 17 }]}>
+          {error}
+        </Text>
       ) : null}
 
       {cards}
 
-      {prefs.metrics.includes('activity') && activity.length > 0 ? (
+      {metricSet.has('activity') && activity.length > 0 ? (
         <View style={styles.activityCard}>
-          <Text style={[t.label, styles.activityTitle]}>SON HAREKETLER</Text>
+          <Text style={[t.label, styles.activityTitle]}>{T.activityTitle}</Text>
           {activity.map((row, i) => (
             <View key={i} style={[styles.activityRow, i === 0 && { borderTopWidth: 0 }]}>
               <Text style={[t.body, { fontSize: 14 }]} numberOfLines={1}>
-                {row.email ?? 'bilinmeyen kullanıcı'}
+                {row.email ?? T.unknownUser}
               </Text>
               <Text style={t.caption} numberOfLines={1}>
                 {actionLabel(row.action)} · {deviceLabel(row.device)} · {timeAgo(row.created_at)}

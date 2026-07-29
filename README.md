@@ -2,7 +2,7 @@
 
 Supabase projeleriniz için **cihaz-üstü kullanıcı analitiği**. Kaç kişi girmiş, kimler girmiş, en son ne zaman girmiş, günlük/haftalık aktif kullanıcı, hangi sağlayıcıdan ve hangi platformdan — hepsi telefonunuzda, şık ve karanlık bir panelde.
 
-Sunucu yok. Telemetri yok. `service_role` yok.
+Sunucu yok. Telemetri yok. `service_role` yok. Arayüz telefon diline göre otomatik **Türkçe / İngilizce**.
 
 ## Güvenlik modeli (önce bunu okuyun)
 
@@ -17,28 +17,25 @@ Sunucu yok. Telemetri yok. `service_role` yok.
 
 ## Kurulum
 
-### 1. Veritabanı (bir kez)
-
-[`supabase/setup.sql`](supabase/setup.sql) dosyasını Supabase **SQL Editor**'de baştan sona çalıştırın. Script:
-
-- `analytics` şemasını (admin listesi + giriş arşivi) kurar,
-- 8 adet `supalytics_*` RPC'sini tanımlar (`revoke`/`grant` kapanışıyla),
-- Supabase'in kalıcı olmayan `auth.audit_log_entries` logunu her gece `analytics.login_history`'ye arşivleyen `pg_cron` işini kurar ve ilk backfill'i yapar.
-
-Sonra dosyanın en altındaki `>>> EDIT ME` bloğunu kendi `user_id`'nizle açın — admin eklemeden panel her istekte `forbidden` görür.
-
-### 2. Uygulama
-
 ```bash
 npm install
 npx expo start
 ```
 
-iPhone/Android'de **Expo Go** ile QR'ı okutun (Mac gerekmez). Açılışta:
+iPhone/Android'de **Expo Go** ile QR'ı okutun (Mac gerekmez). Gerisini uygulama içindeki sihirbaz anlatır:
 
-1. Proje URL'si, `anon` anahtarı ve admin hesabınızın e-posta/şifresi ile **Bağlan ve doğrula** — ya da hiçbir şey bağlamadan **"Şimdilik demo verilerle gez"**.
-2. Odağınızı seçin (Büyüme / Tutundurma / Kullanıcılar) — Özet ekranının sırası buna göre dizilir.
-3. Özet'te görünecek metrikleri ve vurgu renginizi seçin.
+1. **Ne görmek istiyorsun?** Önce metriklerini seçersin (aktif kullanıcılar, kayıtlar, sağlayıcılar, cihazlar, oturumlar, işlem akışı).
+2. **Veri kaynağı:** "Demo verilerle gez" dersen hiçbir kurulum gerekmez. "Kendi projeme bağlan" dersen…
+3. **SQL adımı:** Uygulama, *seçtiğin metriklere göre daraltılmış* kurulum SQL'ini gerekçeleriyle birlikte gösterir — minik bir **Kopyala** butonuyla. Supabase **SQL Editor**'e yapıştırıp çalıştırırsın; en alttaki `>>> EDIT ME` bloğuyla kendi hesabını admin yaparsın (adımlar tek tek ekranda yazar).
+4. **API adımı:** Project URL + `anon (public)` anahtar + admin hesabının e-posta/şifresi. Bilgilerin Dashboard'da nerede olduğu ekranda anlatılır; `service_role`/secret anahtar yapıştırırsan uygulama **reddeder**. "Bağlan ve doğrula" hem girişi hem admin yetkisini gerçek bir RPC çağrısıyla test eder.
+
+Aynı SQL rehberi sonradan **Ayarlar → "Kurulum SQL'i"** ekranından da açılır (metrik seçimini değiştirirsen güncel script'i oradan alıp tekrar çalıştırman yeterlidir; script tekrar çalıştırmaya dayanıklıdır).
+
+Depodaki [`supabase/setup.sql`](supabase/setup.sql), tüm metrikleri kapsayan tam sürümdür; uygulamadaki üreteçle aynı gövdeyi paylaşır. Script:
+
+- `analytics` şemasını (admin listesi + giriş arşivi) kurar,
+- `supalytics_*` RPC'lerini tanımlar (`revoke`/`grant` kapanışıyla),
+- Supabase'in kalıcı olmayan `auth.audit_log_entries` logunu her gece `analytics.login_history`'ye arşivleyen `pg_cron` işini kurar ve ilk backfill'i yapar. Aktiflik/cihaz/akış metrikleri seçilmediyse uygulamanın ürettiği "çekirdek" script bu arşiv katmanını hiç kurmaz.
 
 ## Ekranlar
 

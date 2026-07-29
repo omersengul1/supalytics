@@ -1,17 +1,20 @@
 import * as Haptics from 'expo-haptics';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Sparkline } from '@/components/sparkline';
 import { fetchDauSeries, fetchDevices, fetchProviders, fetchSignupSeries } from '@/lib/api';
 import { compact, deviceLabel, providerLabel, shortDate } from '@/lib/format';
+import { T } from '@/lib/i18n';
+import { usePrefs } from '@/lib/prefs-context';
 import { colors, radius, type as t, useTheme } from '@/lib/theme';
 import type { DeviceSlice, ProviderSlice, SeriesPoint } from '@/lib/types';
 
 const RANGES = [7, 30, 90] as const;
 
 export default function Charts() {
+  const { prefs } = usePrefs();
   const { accentColor } = useTheme();
   const insets = useSafeAreaInsets();
 
@@ -22,27 +25,33 @@ export default function Charts() {
   const [devices, setDevices] = useState<DeviceSlice[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async (range: number) => {
-    const results = await Promise.allSettled([
-      fetchDauSeries(range),
-      fetchSignupSeries(range),
-      fetchProviders(),
-      fetchDevices(range),
-    ]);
-    const [rDau, rSignups, rProviders, rDevices] = results;
-    if (rDau.status === 'fulfilled') setDau(rDau.value);
-    if (rSignups.status === 'fulfilled') setSignups(rSignups.value);
-    if (rProviders.status === 'fulfilled') setProviders(rProviders.value);
-    if (rDevices.status === 'fulfilled') setDevices(rDevices.value);
-    const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
-    setError(
-      failed
-        ? failed.reason instanceof Error
-          ? failed.reason.message
-          : 'Veriler alınamadı.'
-        : null,
-    );
-  }, []);
+  const metricSet = useMemo(() => new Set(prefs.metrics), [prefs.metrics]);
+  const anyChart =
+    metricSet.has('active') ||
+    metricSet.has('signups') ||
+    metricSet.has('providers') ||
+    metricSet.has('devices');
+
+  // Seçilmeyen metriğin verisi çekilmez (SQL'i kurulmamış olabilir).
+  const load = useCallback(
+    async (range: number) => {
+      const jobs: Promise<void>[] = [];
+      if (metricSet.has('active')) jobs.push(fetchDauSeries(range).then(setDau));
+      if (metricSet.has('signups')) jobs.push(fetchSignupSeries(range).then(setSignups));
+      if (metricSet.has('providers')) jobs.push(fetchProviders().then(setProviders));
+      if (metricSet.has('devices')) jobs.push(fetchDevices(range).then(setDevices));
+      const results = await Promise.allSettled(jobs);
+      const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+      setError(
+        failed
+          ? failed.reason instanceof Error
+            ? failed.reason.message
+            : T.errFetchGeneric
+          : null,
+      );
+    },
+    [metricSet],
+  );
 
   useEffect(() => {
     load(days);
@@ -56,7 +65,7 @@ export default function Charts() {
         { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 110 },
       ]}
     >
-      <Text style={[t.title, { marginBottom: 14 }]}>Grafikler</Text>
+      <Text style={[t.title, { marginBottom: 14 }]}>{T.chartsTitle}</Text>
 
       <View style={styles.segment}>
         {RANGES.map((range) => {
@@ -72,13 +81,8 @@ export default function Charts() {
               }}
               style={[styles.segmentItem, active && { backgroundColor: colors.elevated }]}
             >
-              <Text
-                style={[
-                  t.label,
-                  { color: active ? colors.text : colors.tertiary },
-                ]}
-              >
-                {range} gün
+              <Text style={[t.label, { color: active ? colors.text : colors.tertiary }]}>
+                {T.rangeDays(range)}
               </Text>
             </Pressable>
           );
@@ -86,22 +90,34 @@ export default function Charts() {
       </View>
 
       {error ? (
-        <Text style={[t.caption, { color: colors.danger, marginBottom: 12 }]}>{error}</Text>
+        <Text style={[t.caption, { color: colors.danger, marginBottom: 12, lineHeight: 17 }]}>
+          {error}
+        </Text>
       ) : null}
 
-      <SeriesCard title="GÜNLÜK AKTİF" data={dau} height={140} />
-      <SeriesCard title="YENİ KAYIT" data={signups} height={100} />
+      {!anyChart ? <Text style={[t.caption, { lineHeight: 17 }]}>{T.chartsAllOff}</Text> : null}
 
-      <BreakdownCard
-        title="SAĞLAYICILAR"
-        rows={providers.map((p) => ({ label: providerLabel(p.provider), value: p.users }))}
-        accentColor={accentColor}
-      />
-      <BreakdownCard
-        title="CİHAZLAR"
-        rows={devices.map((d) => ({ label: deviceLabel(d.device), value: d.sessions }))}
-        accentColor={accentColor}
-      />
+      {metricSet.has('active') ? (
+        <SeriesCard title={T.chartDau} data={dau} height={140} />
+      ) : null}
+      {metricSet.has('signups') ? (
+        <SeriesCard title={T.chartSignups} data={signups} height={100} />
+      ) : null}
+
+      {metricSet.has('providers') ? (
+        <BreakdownCard
+          title={T.chartProviders}
+          rows={providers.map((p) => ({ label: providerLabel(p.provider), value: p.users }))}
+          accentColor={accentColor}
+        />
+      ) : null}
+      {metricSet.has('devices') ? (
+        <BreakdownCard
+          title={T.chartDevices}
+          rows={devices.map((d) => ({ label: deviceLabel(d.device), value: d.sessions }))}
+          accentColor={accentColor}
+        />
+      ) : null}
     </ScrollView>
   );
 }
@@ -119,7 +135,7 @@ function SeriesCard({ title, data, height }: { title: string; data: SeriesPoint[
           </View>
         </>
       ) : (
-        <Text style={t.caption}>Veri yok.</Text>
+        <Text style={t.caption}>{T.noData}</Text>
       )}
     </View>
   );
@@ -140,13 +156,18 @@ function BreakdownCard({
     <View style={styles.card}>
       <Text style={[t.label, styles.cardLabel]}>{title}</Text>
       {sorted.length === 0 ? (
-        <Text style={t.caption}>Veri yok.</Text>
+        <Text style={t.caption}>{T.noData}</Text>
       ) : (
         sorted.map((row) => (
           <View key={row.label} style={styles.barBlock}>
             <View style={styles.barLabelRow}>
               <Text style={[t.body, { fontSize: 14 }]}>{row.label}</Text>
-              <Text style={[t.body, { fontSize: 14, fontVariant: ['tabular-nums'], color: colors.secondary }]}>
+              <Text
+                style={[
+                  t.body,
+                  { fontSize: 14, fontVariant: ['tabular-nums'], color: colors.secondary },
+                ]}
+              >
                 {compact(row.value)}
               </Text>
             </View>

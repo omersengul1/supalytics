@@ -6,6 +6,7 @@ import { SymbolView } from 'expo-symbols';
 import { useCallback, useEffect, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { T } from '@/lib/i18n';
 import { PrefsProvider, usePrefs } from '@/lib/prefs-context';
 import { colors, radius, ThemeProvider, type as t, useTheme } from '@/lib/theme';
 
@@ -67,8 +68,8 @@ function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
     setFailed(false);
     try {
       const result = await LocalAuthentication.authenticateAsync({
-        promptMessage: 'supalytics kilidini aç',
-        cancelLabel: 'Vazgeç',
+        promptMessage: T.lockPrompt,
+        cancelLabel: T.cancel,
       });
       if (result.success) onUnlocked();
       else setFailed(true);
@@ -88,10 +89,8 @@ function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
       ) : (
         <Text style={{ fontSize: 36, color: colors.tertiary }}>🔒</Text>
       )}
-      <Text style={[t.title, { marginTop: 16 }]}>supalytics kilitli</Text>
-      <Text style={[t.caption, { marginTop: 6 }]}>
-        {failed ? 'Doğrulama başarısız. Tekrar deneyin.' : 'Kimlik doğrulaması bekleniyor…'}
-      </Text>
+      <Text style={[t.title, { marginTop: 16 }]}>{T.lockTitle}</Text>
+      <Text style={[t.caption, { marginTop: 6 }]}>{failed ? T.lockFailed : T.lockWaiting}</Text>
       <Pressable
         onPress={tryUnlock}
         style={({ pressed }) => [
@@ -99,7 +98,7 @@ function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
           { backgroundColor: accentColor, opacity: pressed ? 0.85 : 1 },
         ]}
       >
-        <Text style={lockStyles.buttonText}>Tekrar dene</Text>
+        <Text style={lockStyles.buttonText}>{T.lockRetry}</Text>
       </Pressable>
     </View>
   );

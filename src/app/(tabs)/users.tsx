@@ -13,12 +13,16 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { fetchUserDetail, fetchUsers } from '@/lib/api';
 import { actionLabel, deviceLabel, providerGlyph, timeAgo } from '@/lib/format';
+import { T } from '@/lib/i18n';
+import { usePrefs } from '@/lib/prefs-context';
+import { needsHistory } from '@/lib/setup-sql';
 import { colors, radius, type as t, useTheme } from '@/lib/theme';
 import type { UserEvent, UserRow } from '@/lib/types';
 
 const DAY_MS = 86_400_000;
 
 export default function Users() {
+  const { prefs } = usePrefs();
   const { accentColor } = useTheme();
   const insets = useSafeAreaInsets();
 
@@ -34,7 +38,7 @@ export default function Users() {
       setRows(await fetchUsers(q));
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Kullanıcılar alınamadı.');
+      setError(e instanceof Error ? e.message : T.errUsersFetch);
     } finally {
       setLoading(false);
     }
@@ -64,10 +68,10 @@ export default function Users() {
         </View>
         <View style={{ flex: 1, gap: 2 }}>
           <Text style={[t.body, { fontSize: 15 }]} numberOfLines={1}>
-            {item.email ?? 'e-postasız hesap'}
+            {item.email ?? T.noEmail}
           </Text>
           <Text style={t.caption} numberOfLines={1}>
-            son görülme {timeAgo(item.last_sign_in_at)}
+            {T.lastSeen(timeAgo(item.last_sign_in_at))}
           </Text>
         </View>
         <Text style={[t.caption, { color: colors.secondary, letterSpacing: 2 }]}>
@@ -79,11 +83,11 @@ export default function Users() {
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top + 16 }]}>
-      <Text style={[t.title, styles.header]}>Kullanıcılar</Text>
+      <Text style={[t.title, styles.header]}>{T.usersTitle}</Text>
       <TextInput
         value={query}
         onChangeText={setQuery}
-        placeholder="E-posta ara…"
+        placeholder={T.searchPlaceholder}
         placeholderTextColor={colors.tertiary}
         autoCapitalize="none"
         autoCorrect={false}
@@ -104,31 +108,44 @@ export default function Users() {
           contentContainerStyle={{ paddingBottom: insets.bottom + 110 }}
           ListEmptyComponent={
             <Text style={[t.caption, styles.empty]}>
-              {query.trim() ? 'Eşleşen kullanıcı yok.' : 'Henüz kullanıcı görünmüyor.'}
+              {query.trim() ? T.emptySearch : T.emptyUsers}
             </Text>
           }
         />
       )}
-      <UserSheet user={selected} onClose={() => setSelected(null)} />
+      <UserSheet
+        user={selected}
+        historyEnabled={needsHistory(prefs.metrics)}
+        onClose={() => setSelected(null)}
+      />
     </View>
   );
 }
 
-// Satıra dokununca açılan zaman çizelgesi sheet'i.
-function UserSheet({ user, onClose }: { user: UserRow | null; onClose: () => void }) {
+// Satıra dokununca açılan zaman çizelgesi sheet'i. Giriş geçmişi metrikleri
+// hiç seçilmediyse (SQL'de arşiv yok) zaman çizelgesi yerine açıklama gösterir.
+function UserSheet({
+  user,
+  historyEnabled,
+  onClose,
+}: {
+  user: UserRow | null;
+  historyEnabled: boolean;
+  onClose: () => void;
+}) {
   const { accentColor } = useTheme();
   const insets = useSafeAreaInsets();
   const [events, setEvents] = useState<UserEvent[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !historyEnabled) return;
     setEvents(null);
     setError(null);
     fetchUserDetail(user.id, 50)
       .then(setEvents)
-      .catch((e) => setError(e instanceof Error ? e.message : 'Geçmiş alınamadı.'));
-  }, [user]);
+      .catch((e) => setError(e instanceof Error ? e.message : T.errHistoryFetch));
+  }, [user, historyEnabled]);
 
   return (
     <Modal visible={!!user} transparent animationType="slide" onRequestClose={onClose}>
@@ -136,23 +153,26 @@ function UserSheet({ user, onClose }: { user: UserRow | null; onClose: () => voi
       <View style={[styles.sheet, { paddingBottom: insets.bottom + 20 }]}>
         <View style={styles.grabber} />
         <Text style={[t.body, { fontWeight: '700', fontSize: 17 }]} numberOfLines={1}>
-          {user?.email ?? 'e-postasız hesap'}
+          {user?.email ?? T.noEmail}
         </Text>
         <Text style={[t.caption, { marginTop: 2 }]}>
-          katıldı: {user ? timeAgo(user.created_at) : ''} · sağlayıcı:{' '}
+          {T.sheetJoined(user ? timeAgo(user.created_at) : '')} · {T.sheetProviders}:{' '}
           {user?.providers.join(', ') || '—'}
         </Text>
         <View style={styles.sheetDivider} />
+        {!historyEnabled ? (
+          <Text style={[t.caption, { lineHeight: 17, paddingBottom: 8 }]}>
+            {T.sheetHistoryOff}
+          </Text>
+        ) : null}
         {error ? <Text style={[t.caption, { color: colors.danger }]}>{error}</Text> : null}
-        {!events && !error ? <ActivityIndicator color={accentColor} /> : null}
+        {historyEnabled && !events && !error ? <ActivityIndicator color={accentColor} /> : null}
         {events ? (
           <FlatList
             data={events}
             keyExtractor={(_, i) => String(i)}
             style={{ maxHeight: 380 }}
-            ListEmptyComponent={
-              <Text style={t.caption}>Bu kullanıcı için kayıtlı hareket yok.</Text>
-            }
+            ListEmptyComponent={<Text style={t.caption}>{T.sheetEmpty}</Text>}
             renderItem={({ item }) => (
               <View style={styles.eventRow}>
                 <View style={[styles.eventDot, { backgroundColor: accentColor }]} />

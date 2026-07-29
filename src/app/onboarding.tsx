@@ -1,5 +1,5 @@
 import * as Haptics from 'expo-haptics';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -13,36 +13,35 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { SetupGuide } from '@/components/setup-guide';
+import { probeAdminAccess } from '@/lib/api';
+import { T } from '@/lib/i18n';
 import { usePrefs } from '@/lib/prefs-context';
 import { saveCredentials, type Focus, type MetricKey } from '@/lib/prefs';
-import { createClientFromCreds, normalizeProjectUrl, resetClient } from '@/lib/supabase';
+import {
+  assertPublicKey,
+  createClientFromCreds,
+  normalizeProjectUrl,
+  resetClient,
+} from '@/lib/supabase';
 import { accents, colors, radius, type as t, useTheme, type AccentKey } from '@/lib/theme';
 
-const STEP_COUNT = 5;
+type StepId = 'manifesto' | 'metrics' | 'focus' | 'source' | 'sql' | 'connect' | 'accent';
+type SourceMode = 'real' | 'demo' | null;
 
-const FOCUS_OPTIONS: { key: Focus; glyph: string; title: string; desc: string }[] = [
-  { key: 'growth', glyph: '↗', title: 'Büyüme', desc: 'Kayıtlar ve yeni kullanıcılar önde' },
-  { key: 'retention', glyph: '↺', title: 'Tutundurma', desc: 'Aktiflik ve bağlılık önde' },
-  { key: 'people', glyph: '◉', title: 'Kullanıcılar', desc: 'Kim girmiş, ne zaman girmiş' },
-];
-
-const METRIC_OPTIONS: { key: MetricKey; label: string }[] = [
-  { key: 'active', label: 'Aktif kullanıcılar' },
-  { key: 'signups', label: 'Kayıtlar' },
-  { key: 'providers', label: 'Sağlayıcılar' },
-  { key: 'devices', label: 'Cihazlar' },
-  { key: 'sessions', label: 'Son oturumlar' },
-  { key: 'activity', label: 'İşlem akışı' },
-];
+const METRIC_KEYS: MetricKey[] = ['active', 'signups', 'providers', 'devices', 'sessions', 'activity'];
+const FOCUS_KEYS: Focus[] = ['growth', 'retention', 'people'];
+const FOCUS_GLYPHS: Record<Focus, string> = { growth: '↗', retention: '↺', people: '◉' };
 
 export default function Onboarding() {
   const { update } = usePrefs();
   const { accent, accentColor, setAccent } = useTheme();
   const insets = useSafeAreaInsets();
 
-  const [step, setStep] = useState(0);
-  const [focus, setFocus] = useState<Focus>('growth');
+  const [stepIndex, setStepIndex] = useState(0);
   const [metrics, setMetrics] = useState<MetricKey[]>(['active', 'signups', 'activity']);
+  const [focus, setFocus] = useState<Focus>('growth');
+  const [mode, setMode] = useState<SourceMode>(null);
 
   const [url, setUrl] = useState('');
   const [anonKey, setAnonKey] = useState('');
@@ -51,47 +50,15 @@ export default function Onboarding() {
   const [connecting, setConnecting] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
 
-  const advance = () => setStep((s) => Math.min(s + 1, STEP_COUNT - 1));
+  // Adım yolu kaynak seçimine göre dallanır: demo SQL/bağlantı adımlarını atlar.
+  const path = useMemo<StepId[]>(() => {
+    const base: StepId[] = ['manifesto', 'metrics', 'focus', 'source'];
+    return mode === 'demo' ? [...base, 'accent'] : [...base, 'sql', 'connect', 'accent'];
+  }, [mode]);
+  const step = path[Math.min(stepIndex, path.length - 1)];
 
-  const handleConnect = async () => {
-    setConnecting(true);
-    setConnectError(null);
-    try {
-      const cleanUrl = normalizeProjectUrl(url);
-      const key = anonKey.trim();
-      if (!key) throw new Error('anon anahtarı gerekli.');
-      if (!email.trim() || !password) throw new Error('E-posta ve şifre gerekli.');
-      resetClient();
-      const client = createClientFromCreds({ url: cleanUrl, anonKey: key });
-      const { error } = await client.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      });
-      if (error) {
-        throw new Error(
-          error.message === 'Invalid login credentials'
-            ? 'E-posta veya şifre hatalı.'
-            : error.message,
-        );
-      }
-      await saveCredentials({ url: cleanUrl, anonKey: key });
-      update({ demoMode: false });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      advance();
-    } catch (e) {
-      resetClient();
-      setConnectError(e instanceof Error ? e.message : 'Bağlantı kurulamadı.');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-    } finally {
-      setConnecting(false);
-    }
-  };
-
-  const enterDemo = () => {
-    Haptics.selectionAsync();
-    update({ demoMode: true });
-    advance();
-  };
+  const advance = () => setStepIndex((i) => Math.min(i + 1, path.length - 1));
+  const goBack = () => setStepIndex((i) => Math.max(i - 1, 0));
 
   const toggleMetric = (key: MetricKey) => {
     setMetrics((prev) => {
@@ -105,9 +72,42 @@ export default function Onboarding() {
     });
   };
 
+  const handleConnect = async () => {
+    setConnecting(true);
+    setConnectError(null);
+    try {
+      const cleanUrl = normalizeProjectUrl(url);
+      const key = anonKey.trim();
+      if (!key) throw new Error(T.errKeyRequired);
+      assertPublicKey(key);
+      if (!email.trim() || !password) throw new Error(T.errCredsRequired);
+      resetClient();
+      const client = createClientFromCreds({ url: cleanUrl, anonKey: key });
+      const { error } = await client.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+      if (error) {
+        throw new Error(
+          error.message === 'Invalid login credentials' ? T.errBadLogin : error.message,
+        );
+      }
+      // Giriş yetmez: admin listesinde olduğunu gerçek bir RPC ile kanıtla.
+      await probeAdminAccess();
+      await saveCredentials({ url: cleanUrl, anonKey: key });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      advance();
+    } catch (e) {
+      setConnectError(e instanceof Error ? e.message : T.errConnectGeneric);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally {
+      setConnecting(false);
+    }
+  };
+
   const finish = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    update({ setupDone: true, focus, metrics });
+    update({ setupDone: true, demoMode: mode === 'demo', focus, metrics });
   };
 
   return (
@@ -115,90 +115,91 @@ export default function Onboarding() {
       style={styles.screen}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
+      <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
+        {stepIndex > 0 ? (
+          <Pressable onPress={goBack} hitSlop={12} accessibilityLabel={T.back}>
+            <Text style={styles.backGlyph}>‹</Text>
+          </Pressable>
+        ) : (
+          <View style={{ height: 28 }} />
+        )}
+      </View>
+
       <ScrollView
-        contentContainerStyle={[styles.content, { paddingTop: insets.top + 40 }]}
+        contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >
-        {step === 0 && (
+        {step === 'manifesto' && (
           <View style={styles.step}>
             <Text style={styles.wordmark}>supalytics</Text>
-            <Text style={styles.headline}>Veriniz{'\n'}cihazınızdan{'\n'}çıkmaz.</Text>
+            <Text style={styles.headline}>{T.manifestoHeadline}</Text>
             <Text style={[t.body, { color: colors.secondary, lineHeight: 24 }]}>
-              Supabase projenizin kullanıcı analitiği; sunucusuz, telemetrisiz, tamamen bu
-              cihazın üstünde.
+              {T.manifestoBody}
             </Text>
             <View style={styles.card}>
-              <Text style={[t.label, styles.cardLabel]}>NEDEN SERVICE_ROLE İSTEMİYORUZ?</Text>
+              <Text style={[t.label, styles.cardLabel]}>{T.manifestoWhyTitle}</Text>
               <Text style={[t.body, { color: colors.secondary, lineHeight: 22, fontSize: 14 }]}>
-                service_role anahtarı veritabanınızdaki her şeyi okuyup yazabilen bir tanrı
-                anahtarıdır ve bir telefonda asla durmamalıdır. supalytics yalnızca herkese açık
-                anon anahtar + sizin admin hesabınızla çalışır; yetki kontrolü veritabanında,
-                security definer fonksiyonların içindedir.
+                {T.manifestoWhyBody}
               </Text>
             </View>
           </View>
         )}
 
-        {step === 1 && (
+        {step === 'metrics' && (
           <View style={styles.step}>
-            <Text style={t.title}>Projeni bağla</Text>
-            <Text style={[t.caption, { marginBottom: 8 }]}>
-              Bilgiler yalnızca bu cihazın Keychain/Keystore’unda saklanır.
-            </Text>
-            <Field
-              label="PROJE URL"
-              value={url}
-              onChangeText={setUrl}
-              placeholder="https://xxxx.supabase.co"
-              keyboardType="url"
-            />
-            <Field
-              label="ANON ANAHTARI (PUBLIC)"
-              value={anonKey}
-              onChangeText={setAnonKey}
-              placeholder="eyJhbGciOi…"
-            />
-            <Field
-              label="ADMİN E-POSTA"
-              value={email}
-              onChangeText={setEmail}
-              placeholder="ben@ornek.com"
-              keyboardType="email-address"
-            />
-            <Field
-              label="ŞİFRE"
-              value={password}
-              onChangeText={setPassword}
-              placeholder="••••••••"
-              secureTextEntry
-            />
-            {connectError ? (
-              <Text style={[t.caption, { color: colors.danger }]}>{connectError}</Text>
-            ) : null}
+            <Text style={t.title}>{T.metricsTitle}</Text>
+            <Text style={[t.caption, { marginBottom: 4, lineHeight: 17 }]}>{T.metricsHint}</Text>
+            {METRIC_KEYS.map((key) => {
+              const selected = metrics.includes(key);
+              return (
+                <Pressable
+                  key={key}
+                  onPress={() => toggleMetric(key)}
+                  style={[styles.option, selected && { borderColor: accentColor }]}
+                >
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Text style={[t.body, { fontWeight: '600', fontSize: 15 }]}>
+                      {T.metricLabels[key]}
+                    </Text>
+                    <Text style={[t.caption, { lineHeight: 16 }]}>{T.metricDescs[key]}</Text>
+                  </View>
+                  <Text
+                    style={[
+                      styles.check,
+                      { color: selected ? accentColor : colors.elevated },
+                    ]}
+                  >
+                    ●
+                  </Text>
+                </Pressable>
+              );
+            })}
           </View>
         )}
 
-        {step === 2 && (
+        {step === 'focus' && (
           <View style={styles.step}>
-            <Text style={t.title}>Neye odaklanıyorsun?</Text>
-            <Text style={[t.caption, { marginBottom: 8 }]}>Özet ekranının sırasını belirler.</Text>
-            {FOCUS_OPTIONS.map((opt) => {
-              const selected = focus === opt.key;
+            <Text style={t.title}>{T.focusTitle}</Text>
+            <Text style={[t.caption, { marginBottom: 4 }]}>{T.focusHint}</Text>
+            {FOCUS_KEYS.map((key) => {
+              const selected = focus === key;
               return (
                 <Pressable
-                  key={opt.key}
+                  key={key}
                   onPress={() => {
                     Haptics.selectionAsync();
-                    setFocus(opt.key);
+                    setFocus(key);
                   }}
                   style={[styles.option, selected && { borderColor: accentColor }]}
                 >
-                  <Text style={[styles.optionGlyph, { color: selected ? accentColor : colors.tertiary }]}>
-                    {opt.glyph}
+                  <Text
+                    style={[styles.optionGlyph, { color: selected ? accentColor : colors.tertiary }]}
+                  >
+                    {FOCUS_GLYPHS[key]}
                   </Text>
                   <View style={{ flex: 1 }}>
-                    <Text style={[t.body, { fontWeight: '600' }]}>{opt.title}</Text>
-                    <Text style={t.caption}>{opt.desc}</Text>
+                    <Text style={[t.body, { fontWeight: '600' }]}>{T.focusOptions[key].title}</Text>
+                    <Text style={t.caption}>{T.focusOptions[key].desc}</Text>
                   </View>
                 </Pressable>
               );
@@ -206,51 +207,109 @@ export default function Onboarding() {
           </View>
         )}
 
-        {step === 3 && (
+        {step === 'source' && (
           <View style={styles.step}>
-            <Text style={t.title}>Özet’te ne görünsün?</Text>
-            <Text style={[t.caption, { marginBottom: 8 }]}>En az bir metrik seçili kalır.</Text>
-            <View style={styles.chipWrap}>
-              {METRIC_OPTIONS.map((opt) => {
-                const selected = metrics.includes(opt.key);
-                return (
-                  <Pressable
-                    key={opt.key}
-                    onPress={() => toggleMetric(opt.key)}
-                    style={[
-                      styles.chip,
-                      selected && { borderColor: accentColor, backgroundColor: colors.elevated },
-                    ]}
+            <Text style={t.title}>{T.sourceTitle}</Text>
+            <Text style={[t.caption, { marginBottom: 4 }]}>{T.sourceHint}</Text>
+            {(
+              [
+                { key: 'real', title: T.sourceReal, desc: T.sourceRealDesc, glyph: '⛁' },
+                { key: 'demo', title: T.sourceDemo, desc: T.sourceDemoDesc, glyph: '▶' },
+              ] as const
+            ).map((opt) => {
+              const selected = mode === opt.key;
+              return (
+                <Pressable
+                  key={opt.key}
+                  onPress={() => {
+                    Haptics.selectionAsync();
+                    setMode(opt.key);
+                  }}
+                  style={[styles.option, selected && { borderColor: accentColor }]}
+                >
+                  <Text
+                    style={[styles.optionGlyph, { color: selected ? accentColor : colors.tertiary }]}
                   >
-                    <Text
-                      style={[
-                        t.body,
-                        { fontSize: 14, fontWeight: '600' },
-                        { color: selected ? colors.text : colors.tertiary },
-                      ]}
-                    >
-                      {opt.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+                    {opt.glyph}
+                  </Text>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Text style={[t.body, { fontWeight: '600' }]}>{opt.title}</Text>
+                    <Text style={[t.caption, { lineHeight: 16 }]}>{opt.desc}</Text>
+                  </View>
+                </Pressable>
+              );
+            })}
           </View>
         )}
 
-        {step === 4 && (
+        {step === 'sql' && (
           <View style={styles.step}>
-            <Text style={t.title}>Vurgu rengin</Text>
-            <Text style={[t.caption, { marginBottom: 8 }]}>
-              Canlı veriyi işaretleyen tek renk bu olacak.
-            </Text>
+            <Text style={t.title}>{T.sqlTitle}</Text>
+            <SetupGuide metrics={metrics} />
+          </View>
+        )}
+
+        {step === 'connect' && (
+          <View style={styles.step}>
+            <Text style={t.title}>{T.connectTitle}</Text>
+            <Text style={[t.caption, { lineHeight: 17 }]}>{T.connectIntro}</Text>
+            <View style={styles.card}>
+              <Text style={[t.label, styles.cardLabel]}>{T.whereFindTitle}</Text>
+              <Text style={[t.caption, { lineHeight: 18, color: colors.secondary }]}>
+                {T.whereFindBody}
+              </Text>
+            </View>
+            <Field
+              label={T.fieldUrl}
+              help={T.fieldUrlHelp}
+              value={url}
+              onChangeText={setUrl}
+              placeholder="https://xxxx.supabase.co"
+              keyboardType="url"
+            />
+            <Field
+              label={T.fieldAnon}
+              help={T.fieldAnonHelp}
+              value={anonKey}
+              onChangeText={setAnonKey}
+              placeholder="eyJhbGciOi… / sb_publishable_…"
+            />
+            <Field
+              label={T.fieldEmail}
+              help={T.fieldEmailHelp}
+              value={email}
+              onChangeText={setEmail}
+              placeholder="you@example.com"
+              keyboardType="email-address"
+            />
+            <Field
+              label={T.fieldPassword}
+              value={password}
+              onChangeText={setPassword}
+              placeholder="••••••••"
+              secureTextEntry
+            />
+            {connectError ? (
+              <Text style={[t.caption, { color: colors.danger, lineHeight: 17 }]}>
+                {connectError}
+              </Text>
+            ) : (
+              <Text style={[t.caption, { lineHeight: 17 }]}>{T.connectChecksAdmin}</Text>
+            )}
+          </View>
+        )}
+
+        {step === 'accent' && (
+          <View style={styles.step}>
+            <Text style={t.title}>{T.accentTitle}</Text>
+            <Text style={[t.caption, { marginBottom: 8 }]}>{T.accentHint}</Text>
             <View style={styles.swatchRow}>
               {(Object.keys(accents) as AccentKey[]).map((key) => {
                 const selected = accent === key;
                 return (
                   <Pressable
                     key={key}
-                    accessibilityLabel={accents[key].label}
+                    accessibilityLabel={T.accentNames[key]}
                     onPress={() => {
                       Haptics.selectionAsync();
                       setAccent(key);
@@ -262,42 +321,37 @@ export default function Onboarding() {
                 );
               })}
             </View>
-            <Text style={[t.caption, { textAlign: 'center' }]}>{accents[accent].label}</Text>
+            <Text style={[t.caption, { textAlign: 'center' }]}>{T.accentNames[accent]}</Text>
           </View>
         )}
       </ScrollView>
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
         <View style={styles.dots}>
-          {Array.from({ length: STEP_COUNT }, (_, i) => (
+          {path.map((_, i) => (
             <View
               key={i}
-              style={[
-                styles.dot,
-                { backgroundColor: i === step ? accentColor : colors.elevated },
-              ]}
+              style={[styles.dot, { backgroundColor: i === stepIndex ? accentColor : colors.elevated }]}
             />
           ))}
         </View>
-        {step === 0 && <PrimaryButton label="Başla" onPress={advance} />}
-        {step === 1 && (
-          <>
-            <PrimaryButton
-              label={connecting ? 'Doğrulanıyor…' : 'Bağlan ve doğrula'}
-              onPress={handleConnect}
-              disabled={connecting}
-              loading={connecting}
-            />
-            <Pressable onPress={enterDemo} disabled={connecting} hitSlop={8}>
-              <Text style={[t.label, { color: accentColor, textAlign: 'center', marginTop: 14 }]}>
-                Şimdilik demo verilerle gez
-              </Text>
-            </Pressable>
-          </>
+        {step === 'manifesto' && <PrimaryButton label={T.start} onPress={advance} />}
+        {(step === 'metrics' || step === 'focus') && (
+          <PrimaryButton label={T.next} onPress={advance} />
         )}
-        {step === 2 && <PrimaryButton label="Devam" onPress={advance} />}
-        {step === 3 && <PrimaryButton label="Devam" onPress={advance} />}
-        {step === 4 && <PrimaryButton label="Paneli aç" onPress={finish} />}
+        {step === 'source' && (
+          <PrimaryButton label={T.next} onPress={advance} disabled={mode === null} />
+        )}
+        {step === 'sql' && <PrimaryButton label={T.sqlDone} onPress={advance} />}
+        {step === 'connect' && (
+          <PrimaryButton
+            label={connecting ? T.connectVerifying : T.connectCta}
+            onPress={handleConnect}
+            disabled={connecting}
+            loading={connecting}
+          />
+        )}
+        {step === 'accent' && <PrimaryButton label={T.openPanel} onPress={finish} />}
       </View>
     </KeyboardAvoidingView>
   );
@@ -305,10 +359,11 @@ export default function Onboarding() {
 
 function Field({
   label,
+  help,
   ...inputProps
-}: { label: string } & React.ComponentProps<typeof TextInput>) {
+}: { label: string; help?: string } & React.ComponentProps<typeof TextInput>) {
   return (
-    <View style={{ gap: 6 }}>
+    <View style={{ gap: 5 }}>
       <Text style={t.label}>{label}</Text>
       <TextInput
         {...inputProps}
@@ -317,6 +372,7 @@ function Field({
         placeholderTextColor={colors.tertiary}
         style={styles.input}
       />
+      {help ? <Text style={[t.caption, { lineHeight: 15 }]}>{help}</Text> : null}
     </View>
   );
 }
@@ -339,7 +395,7 @@ function PrimaryButton({
       disabled={disabled}
       style={({ pressed }) => [
         styles.primary,
-        { backgroundColor: accentColor, opacity: disabled ? 0.6 : pressed ? 0.85 : 1 },
+        { backgroundColor: accentColor, opacity: disabled ? 0.5 : pressed ? 0.85 : 1 },
       ]}
     >
       {loading ? (
@@ -356,12 +412,22 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.bg,
   },
+  topBar: {
+    paddingHorizontal: 20,
+  },
+  backGlyph: {
+    fontSize: 28,
+    lineHeight: 28,
+    color: colors.secondary,
+    fontWeight: '600',
+  },
   content: {
     paddingHorizontal: 24,
+    paddingTop: 8,
     paddingBottom: 24,
   },
   step: {
-    gap: 16,
+    gap: 14,
   },
   wordmark: {
     ...t.caption,
@@ -383,7 +449,6 @@ const styles = StyleSheet.create({
     borderColor: colors.hairline,
     padding: 16,
     gap: 8,
-    marginTop: 8,
   },
   cardLabel: {
     letterSpacing: 0.8,
@@ -409,23 +474,13 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   optionGlyph: {
-    fontSize: 24,
-    width: 32,
+    fontSize: 22,
+    width: 30,
     textAlign: 'center',
     fontWeight: '700',
   },
-  chipWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  chip: {
-    borderRadius: radius.control,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    backgroundColor: colors.surface,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+  check: {
+    fontSize: 18,
   },
   swatchRow: {
     flexDirection: 'row',

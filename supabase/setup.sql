@@ -140,6 +140,9 @@ $$;
 --    "Aktif" tanımı: action in ('login','token_refreshed').
 -- ----------------------------------------------------------------------------
 
+-- Not: uygulama, seçilen metriklere göre bu script'in daraltılmış bir halini de
+-- üretebilir (arşivsiz "çekirdek" kurulum). totals bu yüzden login_history'nin
+-- varlığını kontrol eder; tablo yoksa aktiflik sütunları 0 döner.
 create or replace function public.supalytics_totals()
 returns table (
   total_users bigint,
@@ -154,22 +157,33 @@ stable
 security definer
 set search_path = ''
 as $$
+declare
+  has_history boolean := to_regclass('analytics.login_history') is not null;
 begin
   if not analytics.is_admin() then raise exception 'forbidden'; end if;
-  return query
-  select
-    (select count(*) from auth.users),
-    (select count(*) from auth.users u where u.created_at >= date_trunc('day', now())),
-    (select count(*) from auth.users u where u.created_at >= now() - interval '7 days'),
-    (select count(distinct h.user_id) from analytics.login_history h
-      where h.action in ('login', 'token_refreshed')
-        and h.created_at >= date_trunc('day', now())),
-    (select count(distinct h.user_id) from analytics.login_history h
-      where h.action in ('login', 'token_refreshed')
-        and h.created_at >= now() - interval '7 days'),
-    (select count(distinct h.user_id) from analytics.login_history h
-      where h.action in ('login', 'token_refreshed')
-        and h.created_at >= now() - interval '30 days');
+  if has_history then
+    return query
+    select
+      (select count(*) from auth.users),
+      (select count(*) from auth.users u where u.created_at >= date_trunc('day', now())),
+      (select count(*) from auth.users u where u.created_at >= now() - interval '7 days'),
+      (select count(distinct h.user_id) from analytics.login_history h
+        where h.action in ('login', 'token_refreshed')
+          and h.created_at >= date_trunc('day', now())),
+      (select count(distinct h.user_id) from analytics.login_history h
+        where h.action in ('login', 'token_refreshed')
+          and h.created_at >= now() - interval '7 days'),
+      (select count(distinct h.user_id) from analytics.login_history h
+        where h.action in ('login', 'token_refreshed')
+          and h.created_at >= now() - interval '30 days');
+  else
+    return query
+    select
+      (select count(*) from auth.users),
+      (select count(*) from auth.users u where u.created_at >= date_trunc('day', now())),
+      (select count(*) from auth.users u where u.created_at >= now() - interval '7 days'),
+      0::bigint, 0::bigint, 0::bigint;
+  end if;
 end;
 $$;
 

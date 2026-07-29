@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import {
   Alert,
   Linking,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -14,27 +15,22 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { SetupGuide } from '@/components/setup-guide';
+import { T } from '@/lib/i18n';
 import { loadCredentials, wipeEverything, type MetricKey } from '@/lib/prefs';
 import { usePrefs } from '@/lib/prefs-context';
 import { projectHost, resetClient } from '@/lib/supabase';
 import { accents, colors, radius, type as t, useTheme, type AccentKey } from '@/lib/theme';
 
 const GITHUB_URL = 'https://github.com/omersengul1/supalytics';
-
-const METRIC_LABELS: Record<MetricKey, string> = {
-  active: 'Aktif kullanıcılar',
-  signups: 'Kayıtlar',
-  providers: 'Sağlayıcılar',
-  devices: 'Cihazlar',
-  sessions: 'Son oturumlar',
-  activity: 'İşlem akışı',
-};
+const METRIC_KEYS: MetricKey[] = ['active', 'signups', 'providers', 'devices', 'sessions', 'activity'];
 
 export default function Settings() {
   const { prefs, update, resetToDefaults } = usePrefs();
   const { accent, accentColor, setAccent } = useTheme();
   const insets = useSafeAreaInsets();
   const [host, setHost] = useState<string | null>(null);
+  const [sqlVisible, setSqlVisible] = useState(false);
 
   useEffect(() => {
     if (prefs.demoMode) {
@@ -45,23 +41,19 @@ export default function Settings() {
   }, [prefs.demoMode]);
 
   const confirmWipe = () => {
-    Alert.alert(
-      'Bağlantıyı sil ve sıfırla',
-      'Bağlantı bilgileri, oturum ve tüm tercihler bu cihazdan silinecek. Bu işlem geri alınamaz.',
-      [
-        { text: 'Vazgeç', style: 'cancel' },
-        {
-          text: 'Sil ve sıfırla',
-          style: 'destructive',
-          onPress: async () => {
-            await wipeEverything();
-            resetClient();
-            setAccent('supabase');
-            resetToDefaults(); // setupDone=false → guard onboarding'e döndürür
-          },
+    Alert.alert(T.wipeTitle, T.wipeBody, [
+      { text: T.cancel, style: 'cancel' },
+      {
+        text: T.wipeConfirm,
+        style: 'destructive',
+        onPress: async () => {
+          await wipeEverything();
+          resetClient();
+          setAccent('supabase');
+          resetToDefaults(); // setupDone=false → guard onboarding'e döndürür
         },
-      ],
-    );
+      },
+    ]);
   };
 
   const toggleBiometric = async (next: boolean) => {
@@ -72,15 +64,12 @@ export default function Settings() {
     const hasHardware = await LocalAuthentication.hasHardwareAsync();
     const enrolled = hasHardware && (await LocalAuthentication.isEnrolledAsync());
     if (!enrolled) {
-      Alert.alert(
-        'Biyometri kullanılamıyor',
-        'Bu cihazda Face ID / parmak izi tanımlı değil.',
-      );
+      Alert.alert(T.bioUnavailableTitle, T.bioUnavailableBody);
       return;
     }
     const result = await LocalAuthentication.authenticateAsync({
-      promptMessage: 'Kilidi etkinleştirmek için doğrula',
-      cancelLabel: 'Vazgeç',
+      promptMessage: T.bioPrompt,
+      cancelLabel: T.cancel,
     });
     if (result.success) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -92,9 +81,7 @@ export default function Settings() {
     if (!enabled && prefs.metrics.length === 1 && prefs.metrics.includes(key)) return; // sonuncu kapanmaz
     Haptics.selectionAsync();
     update({
-      metrics: enabled
-        ? [...prefs.metrics, key]
-        : prefs.metrics.filter((m) => m !== key),
+      metrics: enabled ? [...prefs.metrics, key] : prefs.metrics.filter((m) => m !== key),
     });
   };
 
@@ -106,22 +93,27 @@ export default function Settings() {
         { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 110 },
       ]}
     >
-      <Text style={[t.title, { marginBottom: 18 }]}>Ayarlar</Text>
+      <Text style={[t.title, { marginBottom: 18 }]}>{T.settingsTitle}</Text>
 
-      <Section title="BAĞLANTI">
+      <Section title={T.secConnection}>
         <Row
-          label={prefs.demoMode ? 'Demo verileri' : host ?? 'Bağlantı bulunamadı'}
-          sub={prefs.demoMode ? 'Hiçbir yere bağlı değilsiniz' : 'Supabase projesi'}
+          label={prefs.demoMode ? T.connDemo : host ?? T.connNone}
+          sub={prefs.demoMode ? T.connDemoSub : T.connProjectSub}
         />
+        <Pressable onPress={() => setSqlVisible(true)}>
+          <Row label={T.showSetupSql} sub={T.showSetupSqlSub}>
+            <Text style={[t.body, { color: accentColor, fontSize: 18 }]}>›</Text>
+          </Row>
+        </Pressable>
         <Pressable onPress={confirmWipe} style={styles.dangerRow}>
           <Text style={[t.body, { color: colors.danger, fontSize: 15, fontWeight: '600' }]}>
-            Bağlantıyı sil ve sıfırla
+            {T.wipe}
           </Text>
         </Pressable>
       </Section>
 
-      <Section title="GÜVENLİK">
-        <Row label="Face ID / parmak izi kilidi">
+      <Section title={T.secSecurity}>
+        <Row label={T.bioLabel}>
           <Switch
             value={prefs.biometricLock}
             onValueChange={toggleBiometric}
@@ -129,15 +121,12 @@ export default function Settings() {
             thumbColor={colors.text}
           />
         </Row>
-        <Text style={[t.caption, styles.securityNote]}>
-          Bağlantı bilgileriniz ve oturumunuz yalnızca bu cihazın Keychain/Keystore’unda durur;
-          verileriniz cihazınızdan çıkmaz.
-        </Text>
+        <Text style={[t.caption, styles.securityNote]}>{T.securityNote}</Text>
       </Section>
 
-      <Section title="ÖZETTE GÖSTER">
-        {(Object.keys(METRIC_LABELS) as MetricKey[]).map((key) => (
-          <Row key={key} label={METRIC_LABELS[key]}>
+      <Section title={T.secMetrics}>
+        {METRIC_KEYS.map((key) => (
+          <Row key={key} label={T.metricLabels[key]}>
             <Switch
               value={prefs.metrics.includes(key)}
               onValueChange={(v) => toggleMetric(key, v)}
@@ -148,14 +137,14 @@ export default function Settings() {
         ))}
       </Section>
 
-      <Section title="GÖRÜNÜM">
+      <Section title={T.secAppearance}>
         <View style={styles.swatchRow}>
           {(Object.keys(accents) as AccentKey[]).map((key) => {
             const selected = accent === key;
             return (
               <Pressable
                 key={key}
-                accessibilityLabel={accents[key].label}
+                accessibilityLabel={T.accentNames[key]}
                 onPress={() => {
                   Haptics.selectionAsync();
                   setAccent(key);
@@ -175,6 +164,25 @@ export default function Settings() {
           <Text style={[t.caption, { color: accentColor }]}>GitHub</Text>
         </Pressable>
       </View>
+
+      <Modal
+        visible={sqlVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setSqlVisible(false)}
+      >
+        <View style={styles.modal}>
+          <View style={styles.modalHeader}>
+            <Text style={t.title}>{T.sqlModalTitle}</Text>
+            <Pressable onPress={() => setSqlVisible(false)} hitSlop={10}>
+              <Text style={[t.label, { color: accentColor }]}>{T.close}</Text>
+            </Pressable>
+          </View>
+          <ScrollView contentContainerStyle={styles.modalContent}>
+            <SetupGuide metrics={prefs.metrics} />
+          </ScrollView>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -272,5 +280,21 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 4,
     marginTop: 4,
+  },
+  modal: {
+    flex: 1,
+    backgroundColor: colors.bg,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 12,
+  },
+  modalContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 40,
   },
 });

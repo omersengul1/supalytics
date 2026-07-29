@@ -11,6 +11,7 @@ import {
   mockUserDetail,
   mockUsers,
 } from './mock';
+import { T } from './i18n';
 import { getClient } from './supabase';
 import type {
   ActivityRow,
@@ -36,14 +37,27 @@ function demo<T>(value: T): Promise<T> {
 async function rpc<T>(fn: string, args?: Record<string, unknown>): Promise<T> {
   const supabase = await getClient();
   const { data, error } = await supabase.rpc(fn, args);
-  if (error) throw new Error(error.message);
+  if (error) {
+    // Ham PostgREST/Postgres mesajlarını yol gösteren metinlere çevir.
+    if (error.code === 'PGRST202' || /could not find the function/i.test(error.message)) {
+      throw new Error(T.errMissingRpc);
+    }
+    if (error.message === 'forbidden') throw new Error(T.errNotAdmin);
+    throw new Error(error.message);
+  }
   return data as T;
+}
+
+/** Onboarding: giriş sonrası gerçek bir RPC ile admin yetkisini doğrular.
+ *  demoMode bayrağından bağımsız çalışır. */
+export async function probeAdminAccess(): Promise<void> {
+  await rpc<Totals[]>('supalytics_totals');
 }
 
 export async function fetchTotals(): Promise<Totals> {
   if (demoMode) return demo(mockTotals());
   const rows = await rpc<Totals[]>('supalytics_totals');
-  if (!rows?.length) throw new Error('supalytics_totals boş döndü.');
+  if (!rows?.length) throw new Error(T.errEmptyTotals);
   return rows[0];
 }
 
