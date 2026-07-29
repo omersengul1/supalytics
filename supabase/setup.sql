@@ -416,6 +416,16 @@ $$;
 select analytics.archive_auth_events() as archived_rows;
 
 -- ----------------------------------------------------------------------------
+-- 6) API şema önbelleğini tazele
+--    PostgREST fonksiyon/izin bilgisini önbellekte tutar; yeni grant bazen
+--    birkaç dakika gecikmeyle yansır ve bu sırada RPC çağrısı "forbidden"
+--    değil, çıplak bir Postgres hatası olan "permission denied for function"
+--    döner. Script'i tekrar çalıştırmak bunu düzeltmez — önbellek elle
+--    tazelenmeli. Bu satır tam olarak onu yapar.
+-- ----------------------------------------------------------------------------
+notify pgrst, 'reload schema';
+
+-- ----------------------------------------------------------------------------
 -- >>> EDIT ME — admin ekleyin (bunsuz panel her istekte "forbidden" görür).
 -- Authentication → Users sayfasından kendi user ID'nizi kopyalayın, satırların
 -- başındaki "-- " işaretlerini kaldırıp çalıştırın:

@@ -417,6 +417,17 @@ $$;
 
 select analytics.archive_auth_events() as archived_rows;`;
 
+// API katmanı (PostgREST) fonksiyon/izin bilgisini önbellekte tutar; yeni
+// grant bazen birkaç dakika gecikmeyle yansır. Bunu tetiklemek "forbidden"
+// yerine "permission denied for function" gibi görünür — script'i yeniden
+// çalıştırmak yardımcı olmaz, önbellek elle tazelenmeli.
+const RELOAD_SCHEMA = () =>
+  `${c(
+    'API şema önbelleğini hemen tazele: yeni grant’lar anında yansısın (yoksa birkaç dakika sürebilir).',
+    'Refresh the API schema cache immediately so new grants apply right away (otherwise it can take a few minutes).',
+  )}
+notify pgrst, 'reload schema';`;
+
 const FOOTER = () =>
   `${c(
   '>>> EDIT ME — admin ekleyin (bunsuz panel her istekte "forbidden" görür).',
@@ -445,6 +456,6 @@ export function buildSetupSql(metrics: MetricKey[]): string {
   if (history) {
     parts.push(RPC_DAU_SERIES(), RPC_DEVICES(), RPC_USER_DETAIL(), RPC_ACTIVITY(), CRON());
   }
-  parts.push(FOOTER());
+  parts.push(RELOAD_SCHEMA(), FOOTER());
   return parts.join('\n\n') + '\n';
 }

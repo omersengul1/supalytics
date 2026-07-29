@@ -60,7 +60,7 @@ const tr = {
   errNotAdmin:
     'Giriş başarılı; ama bu hesap analytics.admins listesinde değil. Kurulum SQL’inin sonundaki ">>> EDIT ME" adımını bu hesabın user ID’siyle çalıştırın, sonra tekrar deneyin.',
   errPermissionDenied:
-    'Fonksiyon veritabanında var ama çalıştırma yetkisi verilmemiş — script’in tamamı çalışmamış olabilir. Kurulum SQL’ini (en alttaki ">>> EDIT ME" bloğu dahil, baştan sona) SQL Editor’e yeniden yapıştırıp Run’layın. İpucu: kutuda bir kısım seçiliyken Run sadece seçili satırları çalıştırabilir — önce Ctrl/Cmd+A ile tümünü seçip tekrar deneyin.',
+    "Fonksiyon veritabanında var ama yetki API’ye henüz yansımamış olabilir — Supabase’in şema önbelleği yeni grant’ları birkaç dakika geç yansıtır. SQL Editor’de tek başına şunu çalıştırıp önbelleği hemen tazele: notify pgrst, 'reload schema'; sonra tekrar dene. Hâlâ olmuyorsa kurulum SQL’ini (en alttaki \">>> EDIT ME\" dahil) baştan sona yeniden çalıştır.",
   errConnectGeneric: 'Bağlantı kurulamadı.',
   errSecureStore:
     'Bu cihazdaki Expo Go / istemci sürümünde güvenli depolama (Keychain) çalışmıyor; bağlantı bilgileri kalıcı kaydedilemez. Önce mağazadan Expo Go’yu güncellemeyi deneyin. Demo modu bundan etkilenmez.',
@@ -294,7 +294,7 @@ const en: Strings = {
   errNotAdmin:
     'Signed in, but this account is not in analytics.admins. Run the ">>> EDIT ME" step at the bottom of the setup SQL with this account’s user ID, then try again.',
   errPermissionDenied:
-    'The function exists in your database but isn’t granted to run — the script may not have run in full. Paste the setup SQL again from top to bottom (including the ">>> EDIT ME" block at the end) into the SQL Editor and press Run. Tip: if part of the box is selected, Run may only execute that selection — select all with Ctrl/Cmd+A first and try again.',
+    "The function exists but the API may not have picked up the grant yet — Supabase's schema cache can lag a few minutes behind new grants. Run this on its own in the SQL Editor to refresh it right away: notify pgrst, 'reload schema'; then try again. If it still fails, re-run the full setup SQL (including the \">>> EDIT ME\" block) from top to bottom.",
   errConnectGeneric: 'Could not connect.',
   errSecureStore:
     'Secure storage (Keychain) is not working in this Expo Go / client build; connection details cannot be saved persistently. Try updating Expo Go from the store first. Demo mode is unaffected.',
