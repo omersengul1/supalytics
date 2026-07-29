@@ -1,5 +1,4 @@
 import { BlurView } from 'expo-blur';
-import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import * as Haptics from 'expo-haptics';
 import { Tabs } from 'expo-router';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
@@ -9,20 +8,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, radius, useTheme } from '@/lib/theme';
 
-// SDK 57'de BottomTabBarProps `@react-navigation/bottom-tabs`ten import edilemiyor
-// (expo-router vendorladı); tipi Tabs bileşeninden söküyoruz.
+// expo-router'da BottomTabBarProps `@react-navigation/bottom-tabs`ten import
+// edilemiyor (expo-router vendorladı); tipi Tabs bileşeninden söküyoruz.
 type TabBarProps = Parameters<NonNullable<ComponentProps<typeof Tabs>['tabBar']>>[0];
-
-// iOS 26 Liquid Glass henüz her istemcide (ör. Expo Go'nun derlendiği an bu native
-// modülü içermiyorsa) yok — bu durumda native çağrı "Cannot find native module" fırlatır.
-// Yakalayıp düz BlurView'a düşüyoruz; çökme yerine sessiz geri çekilme.
-function safeIsLiquidGlassAvailable(): boolean {
-  try {
-    return isLiquidGlassAvailable();
-  } catch {
-    return false;
-  }
-}
 
 const ICONS: Record<string, { symbol: SFSymbol; fallback: string }> = {
   index: { symbol: 'chart.bar.fill', fallback: '▦' },
@@ -34,7 +22,6 @@ const ICONS: Record<string, { symbol: SFSymbol; fallback: string }> = {
 export function GlassTabBar({ state, descriptors, navigation }: TabBarProps) {
   const { accentColor } = useTheme();
   const insets = useSafeAreaInsets();
-  const glass = safeIsLiquidGlassAvailable();
 
   const row = (
     <View style={styles.row}>
@@ -77,21 +64,15 @@ export function GlassTabBar({ state, descriptors, navigation }: TabBarProps) {
 
   return (
     <View pointerEvents="box-none" style={[styles.wrap, { bottom: insets.bottom + 12 }]}>
-      {glass ? (
-        <GlassView style={styles.dock} glassEffectStyle="regular">
-          {row}
-        </GlassView>
-      ) : (
-        <View style={[styles.dock, styles.dockFallback]}>
-          <BlurView
-            tint="dark"
-            intensity={50}
-            experimentalBlurMethod="dimezisBlurView"
-            style={StyleSheet.absoluteFill}
-          />
-          {row}
-        </View>
-      )}
+      <View style={[styles.dock, styles.dockFallback]}>
+        <BlurView
+          tint="dark"
+          intensity={50}
+          experimentalBlurMethod="dimezisBlurView"
+          style={StyleSheet.absoluteFill}
+        />
+        {row}
+      </View>
     </View>
   );
 }

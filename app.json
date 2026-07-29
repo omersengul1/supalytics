@@ -44,8 +44,7 @@
       "expo-localization"
     ],
     "experiments": {
-      "typedRoutes": true,
-      "reactCompiler": true
+      "typedRoutes": true
     },
     "backgroundColor": "#0A0C0F"
   }
