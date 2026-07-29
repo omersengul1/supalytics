@@ -184,6 +184,30 @@ $$;
 revoke all on function public.supalytics_totals() from public, anon;
 grant execute on function public.supalytics_totals() to authenticated;`;
 
+// Teşhis amaçlı: hangi rolle/kimlikle bağlandığını gösterir. Kasıtlı olarak
+// anon'a da açık — hassas veri döndürmez (yalnızca çağıranın kendi rolü/uid'i/
+// admin durumu), "permission denied" hatalarında uygulamanın gerçek durumu
+// göstermesini sağlar.
+const RPC_WHOAMI = () =>
+  `${c(
+    'Teşhis: bu bağlantının veritabanına hangi rolle/kimlikle ulaştığını gösterir.',
+    'Diagnostic: shows which role/identity this connection actually reaches the database as.',
+  )}
+create or replace function public.supalytics_whoami()
+returns table (jwt_role text, uid uuid, is_admin boolean)
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+begin
+  return query select auth.role(), auth.uid(), coalesce(analytics.is_admin(), false);
+end;
+$$;
+
+revoke all on function public.supalytics_whoami() from public;
+grant execute on function public.supalytics_whoami() to anon, authenticated;`;
+
 const RPC_SIGNUP_SERIES = () =>
   `create or replace function public.supalytics_signup_series(days int default 30)
 returns table (day date, users bigint)
@@ -452,6 +476,7 @@ export function buildSetupSql(metrics: MetricKey[]): string {
     RPC_SIGNUP_SERIES(),
     RPC_PROVIDERS(),
     RPC_USER_LIST(),
+    RPC_WHOAMI(),
   );
   if (history) {
     parts.push(RPC_DAU_SERIES(), RPC_DEVICES(), RPC_USER_DETAIL(), RPC_ACTIVITY(), CRON());

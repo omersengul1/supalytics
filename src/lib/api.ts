@@ -51,10 +51,36 @@ async function rpc<T>(fn: string, args?: Record<string, unknown>): Promise<T> {
   return data as T;
 }
 
+interface WhoAmI {
+  jwt_role: string | null;
+  uid: string | null;
+  is_admin: boolean;
+}
+
+// supalytics_whoami hem anon hem authenticated'a açık — asla "permission
+// denied" ile başarısız olmaz. Asıl çağrı başarısız olduğunda bağlantının
+// veritabanına gerçekte hangi rolle/kimlikle ulaştığını görmek için kullanılır.
+async function whoami(): Promise<WhoAmI | null> {
+  try {
+    const supabase = await getClient();
+    const { data } = await supabase.rpc('supalytics_whoami');
+    const row = Array.isArray(data) ? data[0] : data;
+    return (row as WhoAmI) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** Onboarding: giriş sonrası gerçek bir RPC ile admin yetkisini doğrular.
  *  demoMode bayrağından bağımsız çalışır. */
 export async function probeAdminAccess(): Promise<void> {
-  await rpc<Totals[]>('supalytics_totals');
+  try {
+    await rpc<Totals[]>('supalytics_totals');
+  } catch (e) {
+    const message = e instanceof Error ? e.message : T.errConnectGeneric;
+    const who = await whoami();
+    throw new Error(who ? `${message}\n\n${T.whoamiDebug(who.jwt_role, who.uid, who.is_admin)}` : message);
+  }
 }
 
 export async function fetchTotals(): Promise<Totals> {

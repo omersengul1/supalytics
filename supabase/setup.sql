@@ -240,6 +240,22 @@ begin
 end;
 $$;
 
+-- Teşhis amaçlı: bu bağlantının veritabanına hangi rolle/kimlikle ulaştığını
+-- gösterir. Kasıtlı olarak anon'a da açık — hassas veri döndürmez (yalnızca
+-- çağıranın kendi rolü/uid'i/admin durumu); "permission denied" hatalarında
+-- gerçek durumu görmek için kullanılır.
+create or replace function public.supalytics_whoami()
+returns table (jwt_role text, uid uuid, is_admin boolean)
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+begin
+  return query select auth.role(), auth.uid(), coalesce(analytics.is_admin(), false);
+end;
+$$;
+
 create or replace function public.supalytics_provider_breakdown()
 returns table (provider text, users bigint)
 language plpgsql
@@ -370,6 +386,7 @@ $$;
 -- 4) Kapanış: yetkiler
 --    Fonksiyonlar varsayılan olarak PUBLIC'e execute verir; hepsini kapatıp
 --    yalnızca authenticated'a açıyoruz (admin kontrolü yine de her çağrıda).
+--    supalytics_whoami istisna: teşhis amaçlı, hem anon hem authenticated'a açık.
 -- ----------------------------------------------------------------------------
 revoke all on function public.supalytics_totals()                     from public, anon;
 revoke all on function public.supalytics_dau_series(int)              from public, anon;
@@ -379,6 +396,7 @@ revoke all on function public.supalytics_device_breakdown(int)        from publi
 revoke all on function public.supalytics_user_list(text, int, int)    from public, anon;
 revoke all on function public.supalytics_user_detail(uuid, int)       from public, anon;
 revoke all on function public.supalytics_recent_activity(int)         from public, anon;
+revoke all on function public.supalytics_whoami()                     from public;
 
 grant execute on function public.supalytics_totals()                  to authenticated;
 grant execute on function public.supalytics_dau_series(int)           to authenticated;
@@ -386,6 +404,7 @@ grant execute on function public.supalytics_signup_series(int)        to authent
 grant execute on function public.supalytics_provider_breakdown()      to authenticated;
 grant execute on function public.supalytics_device_breakdown(int)     to authenticated;
 grant execute on function public.supalytics_user_list(text, int, int) to authenticated;
+grant execute on function public.supalytics_whoami()                  to anon, authenticated;
 grant execute on function public.supalytics_user_detail(uuid, int)    to authenticated;
 grant execute on function public.supalytics_recent_activity(int)      to authenticated;
 

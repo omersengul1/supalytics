@@ -62,6 +62,8 @@ const tr = {
   errPermissionDenied:
     "Fonksiyon veritabanında var ama yetki API’ye henüz yansımamış olabilir — Supabase’in şema önbelleği yeni grant’ları birkaç dakika geç yansıtır. SQL Editor’de tek başına şunu çalıştırıp önbelleği hemen tazele: notify pgrst, 'reload schema'; sonra tekrar dene. Hâlâ olmuyorsa kurulum SQL’ini (en alttaki \">>> EDIT ME\" dahil) baştan sona yeniden çalıştır.",
   errConnectGeneric: 'Bağlantı kurulamadı.',
+  whoamiDebug: (role: string | null, uid: string | null, isAdmin: boolean) =>
+    `Teşhis: veritabanı bu isteği rol="${role ?? 'yok'}", uid=${uid ?? 'yok'}, admin listesinde=${isAdmin ? 'evet' : 'hayır'} olarak görüyor.`,
   errSecureStore:
     'Bu cihazdaki Expo Go / istemci sürümünde güvenli depolama (Keychain) çalışmıyor; bağlantı bilgileri kalıcı kaydedilemez. Önce mağazadan Expo Go’yu güncellemeyi deneyin. Demo modu bundan etkilenmez.',
 
@@ -296,6 +298,8 @@ const en: Strings = {
   errPermissionDenied:
     "The function exists but the API may not have picked up the grant yet — Supabase's schema cache can lag a few minutes behind new grants. Run this on its own in the SQL Editor to refresh it right away: notify pgrst, 'reload schema'; then try again. If it still fails, re-run the full setup SQL (including the \">>> EDIT ME\" block) from top to bottom.",
   errConnectGeneric: 'Could not connect.',
+  whoamiDebug: (role: string | null, uid: string | null, isAdmin: boolean) =>
+    `Diagnostic: the database sees this request as role="${role ?? 'none'}", uid=${uid ?? 'none'}, on admin list=${isAdmin ? 'yes' : 'no'}.`,
   errSecureStore:
     'Secure storage (Keychain) is not working in this Expo Go / client build; connection details cannot be saved persistently. Try updating Expo Go from the store first. Demo mode is unaffected.',
 
