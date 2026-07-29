@@ -181,13 +181,9 @@ export default function Overview() {
       </View>
     );
 
-    if (prefs.focus === 'growth') {
-      list.push(signupCards, activeCards, tail);
-    } else {
-      list.push(activeCards, signupCards, tail);
-    }
+    list.push(activeCards, signupCards, tail);
     return list;
-  }, [metricSet, prefs.focus, totals, signups, providers, devices]);
+  }, [metricSet, totals, signups, providers, devices]);
 
   return (
     <ScrollView

@@ -60,6 +60,8 @@ const tr = {
   errNotAdmin:
     'Giriş başarılı; ama bu hesap analytics.admins listesinde değil. Kurulum SQL’inin sonundaki ">>> EDIT ME" adımını bu hesabın user ID’siyle çalıştırın, sonra tekrar deneyin.',
   errConnectGeneric: 'Bağlantı kurulamadı.',
+  errSecureStore:
+    'Bu cihazdaki Expo Go / istemci sürümünde güvenli depolama (Keychain) çalışmıyor; bağlantı bilgileri kalıcı kaydedilemez. Önce mağazadan Expo Go’yu güncellemeyi deneyin. Demo modu bundan etkilenmez.',
 
   // ---- kilit ekranı ----
   lockTitle: 'supalytics kilitli',
@@ -104,15 +106,6 @@ const tr = {
     devices: 'iOS mu, Android mi — hangi platformdan giriyorlar',
     sessions: 'Toplam oturum sayısı',
     activity: 'Canlı akış: kim, ne zaman, ne yaptı',
-  },
-
-  // ---- onboarding: odak ----
-  focusTitle: 'Neye odaklanıyorsun?',
-  focusHint: 'Özet ekranının sırasını belirler.',
-  focusOptions: {
-    growth: { title: 'Büyüme', desc: 'Kayıtlar ve yeni kullanıcılar önde' },
-    retention: { title: 'Tutundurma', desc: 'Aktiflik ve bağlılık önde' },
-    people: { title: 'Kullanıcılar', desc: 'Kim girmiş, ne zaman girmiş' },
   },
 
   // ---- onboarding: kaynak seçimi ----
@@ -293,6 +286,8 @@ const en: Strings = {
   errNotAdmin:
     'Signed in, but this account is not in analytics.admins. Run the ">>> EDIT ME" step at the bottom of the setup SQL with this account’s user ID, then try again.',
   errConnectGeneric: 'Could not connect.',
+  errSecureStore:
+    'Secure storage (Keychain) is not working in this Expo Go / client build; connection details cannot be saved persistently. Try updating Expo Go from the store first. Demo mode is unaffected.',
 
   lockTitle: 'supalytics is locked',
   lockWaiting: 'Waiting for authentication…',
@@ -334,14 +329,6 @@ const en: Strings = {
     devices: 'iOS or Android — which platforms they sign in from',
     sessions: 'Total session count',
     activity: 'Live feed: who did what, when',
-  },
-
-  focusTitle: 'What’s your focus?',
-  focusHint: 'Sets the order of the Overview screen.',
-  focusOptions: {
-    growth: { title: 'Growth', desc: 'Signups and new users first' },
-    retention: { title: 'Retention', desc: 'Activity and engagement first' },
-    people: { title: 'People', desc: 'Who signed in, and when' },
   },
 
   sourceTitle: 'Where should the data come from?',

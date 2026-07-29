@@ -11,13 +11,14 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { SetupGuide } from '@/components/setup-guide';
 import { probeAdminAccess } from '@/lib/api';
 import { T } from '@/lib/i18n';
 import { usePrefs } from '@/lib/prefs-context';
-import { saveCredentials, type Focus, type MetricKey } from '@/lib/prefs';
+import { saveCredentials, type MetricKey } from '@/lib/prefs';
 import {
   assertPublicKey,
   createClientFromCreds,
@@ -26,12 +27,10 @@ import {
 } from '@/lib/supabase';
 import { accents, colors, radius, type as t, useTheme, type AccentKey } from '@/lib/theme';
 
-type StepId = 'manifesto' | 'metrics' | 'focus' | 'source' | 'sql' | 'connect' | 'accent';
+type StepId = 'manifesto' | 'metrics' | 'source' | 'sql' | 'connect' | 'accent';
 type SourceMode = 'real' | 'demo' | null;
 
 const METRIC_KEYS: MetricKey[] = ['active', 'signups', 'providers', 'devices', 'sessions', 'activity'];
-const FOCUS_KEYS: Focus[] = ['growth', 'retention', 'people'];
-const FOCUS_GLYPHS: Record<Focus, string> = { growth: '↗', retention: '↺', people: '◉' };
 
 export default function Onboarding() {
   const { update } = usePrefs();
@@ -40,7 +39,6 @@ export default function Onboarding() {
 
   const [stepIndex, setStepIndex] = useState(0);
   const [metrics, setMetrics] = useState<MetricKey[]>(['active', 'signups', 'activity']);
-  const [focus, setFocus] = useState<Focus>('growth');
   const [mode, setMode] = useState<SourceMode>(null);
 
   const [url, setUrl] = useState('');
@@ -50,9 +48,9 @@ export default function Onboarding() {
   const [connecting, setConnecting] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
 
-  // Adım yolu kaynak seçimine göre dallanır: demo SQL/bağlantı adımlarını atlar.
+  // Adım yolu kaynak seçimine göre dallanır: demo, SQL/bağlantı adımlarını atlar.
   const path = useMemo<StepId[]>(() => {
-    const base: StepId[] = ['manifesto', 'metrics', 'focus', 'source'];
+    const base: StepId[] = ['manifesto', 'metrics', 'source'];
     return mode === 'demo' ? [...base, 'accent'] : [...base, 'sql', 'connect', 'accent'];
   }, [mode]);
   const step = path[Math.min(stepIndex, path.length - 1)];
@@ -94,7 +92,13 @@ export default function Onboarding() {
       }
       // Giriş yetmez: admin listesinde olduğunu gerçek bir RPC ile kanıtla.
       await probeAdminAccess();
-      await saveCredentials({ url: cleanUrl, anonKey: key });
+      try {
+        await saveCredentials({ url: cleanUrl, anonKey: key });
+      } catch {
+        // SecureStore bu istemcide bozuk (ör. eski Expo Go) — sırları düz
+        // depoya YAZMAYIZ; kullanıcıya durumu anlatır, akışı durdururuz.
+        throw new Error(T.errSecureStore);
+      }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       advance();
     } catch (e) {
@@ -107,7 +111,7 @@ export default function Onboarding() {
 
   const finish = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    update({ setupDone: true, demoMode: mode === 'demo', focus, metrics });
+    update({ setupDone: true, demoMode: mode === 'demo', metrics });
   };
 
   return (
@@ -125,220 +129,179 @@ export default function Onboarding() {
         )}
       </View>
 
-      <ScrollView
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-      >
-        {step === 'manifesto' && (
-          <View style={styles.step}>
-            <Text style={styles.wordmark}>supalytics</Text>
-            <Text style={styles.headline}>{T.manifestoHeadline}</Text>
-            <Text style={[t.body, { color: colors.secondary, lineHeight: 24 }]}>
-              {T.manifestoBody}
-            </Text>
-            <View style={styles.card}>
-              <Text style={[t.label, styles.cardLabel]}>{T.manifestoWhyTitle}</Text>
-              <Text style={[t.body, { color: colors.secondary, lineHeight: 22, fontSize: 14 }]}>
-                {T.manifestoWhyBody}
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <Animated.View key={step} entering={FadeInDown.duration(280)} style={styles.step}>
+          {step === 'manifesto' && (
+            <>
+              <Text style={styles.wordmark}>supalytics</Text>
+              <Text style={styles.headline}>{T.manifestoHeadline}</Text>
+              <Text style={[t.body, { color: colors.secondary, lineHeight: 24 }]}>
+                {T.manifestoBody}
               </Text>
-            </View>
-          </View>
-        )}
+              <View style={styles.card}>
+                <Text style={[t.label, styles.cardLabel]}>{T.manifestoWhyTitle}</Text>
+                <Text style={[t.body, { color: colors.secondary, lineHeight: 22, fontSize: 14 }]}>
+                  {T.manifestoWhyBody}
+                </Text>
+              </View>
+            </>
+          )}
 
-        {step === 'metrics' && (
-          <View style={styles.step}>
-            <Text style={t.title}>{T.metricsTitle}</Text>
-            <Text style={[t.caption, { marginBottom: 4, lineHeight: 17 }]}>{T.metricsHint}</Text>
-            {METRIC_KEYS.map((key) => {
-              const selected = metrics.includes(key);
-              return (
-                <Pressable
-                  key={key}
-                  onPress={() => toggleMetric(key)}
-                  style={[styles.option, selected && { borderColor: accentColor }]}
-                >
-                  <View style={{ flex: 1, gap: 2 }}>
-                    <Text style={[t.body, { fontWeight: '600', fontSize: 15 }]}>
-                      {T.metricLabels[key]}
-                    </Text>
-                    <Text style={[t.caption, { lineHeight: 16 }]}>{T.metricDescs[key]}</Text>
-                  </View>
-                  <Text
-                    style={[
-                      styles.check,
-                      { color: selected ? accentColor : colors.elevated },
-                    ]}
-                  >
-                    ●
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        )}
-
-        {step === 'focus' && (
-          <View style={styles.step}>
-            <Text style={t.title}>{T.focusTitle}</Text>
-            <Text style={[t.caption, { marginBottom: 4 }]}>{T.focusHint}</Text>
-            {FOCUS_KEYS.map((key) => {
-              const selected = focus === key;
-              return (
-                <Pressable
-                  key={key}
-                  onPress={() => {
-                    Haptics.selectionAsync();
-                    setFocus(key);
-                  }}
-                  style={[styles.option, selected && { borderColor: accentColor }]}
-                >
-                  <Text
-                    style={[styles.optionGlyph, { color: selected ? accentColor : colors.tertiary }]}
-                  >
-                    {FOCUS_GLYPHS[key]}
-                  </Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[t.body, { fontWeight: '600' }]}>{T.focusOptions[key].title}</Text>
-                    <Text style={t.caption}>{T.focusOptions[key].desc}</Text>
-                  </View>
-                </Pressable>
-              );
-            })}
-          </View>
-        )}
-
-        {step === 'source' && (
-          <View style={styles.step}>
-            <Text style={t.title}>{T.sourceTitle}</Text>
-            <Text style={[t.caption, { marginBottom: 4 }]}>{T.sourceHint}</Text>
-            {(
-              [
-                { key: 'real', title: T.sourceReal, desc: T.sourceRealDesc, glyph: '⛁' },
-                { key: 'demo', title: T.sourceDemo, desc: T.sourceDemoDesc, glyph: '▶' },
-              ] as const
-            ).map((opt) => {
-              const selected = mode === opt.key;
-              return (
-                <Pressable
-                  key={opt.key}
-                  onPress={() => {
-                    Haptics.selectionAsync();
-                    setMode(opt.key);
-                  }}
-                  style={[styles.option, selected && { borderColor: accentColor }]}
-                >
-                  <Text
-                    style={[styles.optionGlyph, { color: selected ? accentColor : colors.tertiary }]}
-                  >
-                    {opt.glyph}
-                  </Text>
-                  <View style={{ flex: 1, gap: 2 }}>
-                    <Text style={[t.body, { fontWeight: '600' }]}>{opt.title}</Text>
-                    <Text style={[t.caption, { lineHeight: 16 }]}>{opt.desc}</Text>
-                  </View>
-                </Pressable>
-              );
-            })}
-          </View>
-        )}
-
-        {step === 'sql' && (
-          <View style={styles.step}>
-            <Text style={t.title}>{T.sqlTitle}</Text>
-            <SetupGuide metrics={metrics} />
-          </View>
-        )}
-
-        {step === 'connect' && (
-          <View style={styles.step}>
-            <Text style={t.title}>{T.connectTitle}</Text>
-            <Text style={[t.caption, { lineHeight: 17 }]}>{T.connectIntro}</Text>
-            <View style={styles.card}>
-              <Text style={[t.label, styles.cardLabel]}>{T.whereFindTitle}</Text>
-              <Text style={[t.caption, { lineHeight: 18, color: colors.secondary }]}>
-                {T.whereFindBody}
-              </Text>
-            </View>
-            <Field
-              label={T.fieldUrl}
-              help={T.fieldUrlHelp}
-              value={url}
-              onChangeText={setUrl}
-              placeholder="https://xxxx.supabase.co"
-              keyboardType="url"
-            />
-            <Field
-              label={T.fieldAnon}
-              help={T.fieldAnonHelp}
-              value={anonKey}
-              onChangeText={setAnonKey}
-              placeholder="eyJhbGciOi… / sb_publishable_…"
-            />
-            <Field
-              label={T.fieldEmail}
-              help={T.fieldEmailHelp}
-              value={email}
-              onChangeText={setEmail}
-              placeholder="you@example.com"
-              keyboardType="email-address"
-            />
-            <Field
-              label={T.fieldPassword}
-              value={password}
-              onChangeText={setPassword}
-              placeholder="••••••••"
-              secureTextEntry
-            />
-            {connectError ? (
-              <Text style={[t.caption, { color: colors.danger, lineHeight: 17 }]}>
-                {connectError}
-              </Text>
-            ) : (
-              <Text style={[t.caption, { lineHeight: 17 }]}>{T.connectChecksAdmin}</Text>
-            )}
-          </View>
-        )}
-
-        {step === 'accent' && (
-          <View style={styles.step}>
-            <Text style={t.title}>{T.accentTitle}</Text>
-            <Text style={[t.caption, { marginBottom: 8 }]}>{T.accentHint}</Text>
-            <View style={styles.swatchRow}>
-              {(Object.keys(accents) as AccentKey[]).map((key) => {
-                const selected = accent === key;
+          {step === 'metrics' && (
+            <>
+              <Text style={styles.question}>{T.metricsTitle}</Text>
+              <Text style={styles.hint}>{T.metricsHint}</Text>
+              {METRIC_KEYS.map((key) => {
+                const selected = metrics.includes(key);
                 return (
-                  <Pressable
+                  <SelectRow
                     key={key}
-                    accessibilityLabel={T.accentNames[key]}
-                    onPress={() => {
-                      Haptics.selectionAsync();
-                      setAccent(key);
-                    }}
-                    style={[styles.swatchOuter, selected && { borderColor: accents[key].color }]}
-                  >
-                    <View style={[styles.swatch, { backgroundColor: accents[key].color }]} />
-                  </Pressable>
+                    selected={selected}
+                    accentColor={accentColor}
+                    title={T.metricLabels[key]}
+                    desc={T.metricDescs[key]}
+                    onPress={() => toggleMetric(key)}
+                  />
                 );
               })}
-            </View>
-            <Text style={[t.caption, { textAlign: 'center' }]}>{T.accentNames[accent]}</Text>
-          </View>
-        )}
+            </>
+          )}
+
+          {step === 'source' && (
+            <>
+              <Text style={styles.question}>{T.sourceTitle}</Text>
+              <Text style={styles.hint}>{T.sourceHint}</Text>
+              <SelectRow
+                selected={mode === 'real'}
+                accentColor={accentColor}
+                title={T.sourceReal}
+                desc={T.sourceRealDesc}
+                round
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setMode('real');
+                }}
+              />
+              <SelectRow
+                selected={mode === 'demo'}
+                accentColor={accentColor}
+                title={T.sourceDemo}
+                desc={T.sourceDemoDesc}
+                round
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setMode('demo');
+                }}
+              />
+            </>
+          )}
+
+          {step === 'sql' && (
+            <>
+              <Text style={styles.question}>{T.sqlTitle}</Text>
+              <SetupGuide metrics={metrics} />
+            </>
+          )}
+
+          {step === 'connect' && (
+            <>
+              <Text style={styles.question}>{T.connectTitle}</Text>
+              <Text style={styles.hint}>{T.connectIntro}</Text>
+              <View style={styles.card}>
+                <Text style={[t.label, styles.cardLabel]}>{T.whereFindTitle}</Text>
+                <Text style={[t.caption, { lineHeight: 18, color: colors.secondary }]}>
+                  {T.whereFindBody}
+                </Text>
+              </View>
+              <Field
+                label={T.fieldUrl}
+                help={T.fieldUrlHelp}
+                value={url}
+                onChangeText={setUrl}
+                placeholder="https://xxxx.supabase.co"
+                keyboardType="url"
+              />
+              <Field
+                label={T.fieldAnon}
+                help={T.fieldAnonHelp}
+                value={anonKey}
+                onChangeText={setAnonKey}
+                placeholder="eyJhbGciOi… / sb_publishable_…"
+              />
+              <Field
+                label={T.fieldEmail}
+                help={T.fieldEmailHelp}
+                value={email}
+                onChangeText={setEmail}
+                placeholder="you@example.com"
+                keyboardType="email-address"
+              />
+              <Field
+                label={T.fieldPassword}
+                value={password}
+                onChangeText={setPassword}
+                placeholder="••••••••"
+                secureTextEntry
+              />
+              {connectError ? (
+                <Text style={[t.caption, { color: colors.danger, lineHeight: 17 }]}>
+                  {connectError}
+                </Text>
+              ) : (
+                <Text style={[t.caption, { lineHeight: 17 }]}>{T.connectChecksAdmin}</Text>
+              )}
+            </>
+          )}
+
+          {step === 'accent' && (
+            <>
+              <Text style={styles.question}>{T.accentTitle}</Text>
+              <Text style={styles.hint}>{T.accentHint}</Text>
+              <View style={styles.swatchRow}>
+                {(Object.keys(accents) as AccentKey[]).map((key) => {
+                  const selected = accent === key;
+                  return (
+                    <Pressable
+                      key={key}
+                      accessibilityLabel={T.accentNames[key]}
+                      onPress={() => {
+                        Haptics.selectionAsync();
+                        setAccent(key);
+                      }}
+                      style={({ pressed }) => [
+                        styles.swatchOuter,
+                        selected && { borderColor: accents[key].color },
+                        pressed && { transform: [{ scale: 0.94 }] },
+                      ]}
+                    >
+                      <View style={[styles.swatch, { backgroundColor: accents[key].color }]} />
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <Text style={[t.caption, { textAlign: 'center' }]}>{T.accentNames[accent]}</Text>
+            </>
+          )}
+        </Animated.View>
       </ScrollView>
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
         <View style={styles.dots}>
           {path.map((_, i) => (
-            <View
+            <Animated.View
               key={i}
-              style={[styles.dot, { backgroundColor: i === stepIndex ? accentColor : colors.elevated }]}
+              layout={LinearTransition.springify().damping(18)}
+              style={[
+                styles.dot,
+                i === stepIndex
+                  ? { width: 22, backgroundColor: accentColor }
+                  : { width: 8, backgroundColor: colors.elevated },
+              ]}
             />
           ))}
         </View>
         {step === 'manifesto' && <PrimaryButton label={T.start} onPress={advance} />}
-        {(step === 'metrics' || step === 'focus') && (
-          <PrimaryButton label={T.next} onPress={advance} />
-        )}
+        {step === 'metrics' && <PrimaryButton label={T.next} onPress={advance} />}
         {step === 'source' && (
           <PrimaryButton label={T.next} onPress={advance} disabled={mode === null} />
         )}
@@ -354,6 +317,50 @@ export default function Onboarding() {
         {step === 'accent' && <PrimaryButton label={T.openPanel} onPress={finish} />}
       </View>
     </KeyboardAvoidingView>
+  );
+}
+
+// Seçilebilir satır: vurgu tonlu zemin + kare (çoklu) ya da yuvarlak (tekli) onay işareti.
+function SelectRow({
+  selected,
+  accentColor,
+  title,
+  desc,
+  round,
+  onPress,
+}: {
+  selected: boolean;
+  accentColor: string;
+  title: string;
+  desc: string;
+  round?: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole={round ? 'radio' : 'checkbox'}
+      accessibilityState={round ? { selected } : { checked: selected }}
+      style={({ pressed }) => [
+        styles.option,
+        selected && { borderColor: accentColor, backgroundColor: accentColor + '14' },
+        pressed && { transform: [{ scale: 0.98 }] },
+      ]}
+    >
+      <View style={{ flex: 1, gap: 3 }}>
+        <Text style={[t.body, { fontWeight: '600', fontSize: 15 }]}>{title}</Text>
+        <Text style={[t.caption, { lineHeight: 16 }]}>{desc}</Text>
+      </View>
+      <View
+        style={[
+          styles.checkbox,
+          round && { borderRadius: 11 },
+          selected && { backgroundColor: accentColor, borderColor: accentColor },
+        ]}
+      >
+        {selected ? <Text style={styles.checkmark}>✓</Text> : null}
+      </View>
+    </Pressable>
   );
 }
 
@@ -396,6 +403,7 @@ function PrimaryButton({
       style={({ pressed }) => [
         styles.primary,
         { backgroundColor: accentColor, opacity: disabled ? 0.5 : pressed ? 0.85 : 1 },
+        pressed && { transform: [{ scale: 0.99 }] },
       ]}
     >
       {loading ? (
@@ -427,7 +435,7 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
   },
   step: {
-    gap: 14,
+    gap: 12,
   },
   wordmark: {
     ...t.caption,
@@ -441,6 +449,19 @@ const styles = StyleSheet.create({
     letterSpacing: -1,
     lineHeight: 46,
     color: colors.text,
+    marginBottom: 4,
+  },
+  question: {
+    fontSize: 26,
+    fontWeight: '700',
+    letterSpacing: -0.5,
+    lineHeight: 32,
+    color: colors.text,
+  },
+  hint: {
+    ...t.caption,
+    lineHeight: 17,
+    marginBottom: 6,
   },
   card: {
     backgroundColor: colors.surface,
@@ -471,16 +492,23 @@ const styles = StyleSheet.create({
     borderRadius: radius.card,
     borderWidth: 1,
     borderColor: colors.hairline,
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
   },
-  optionGlyph: {
-    fontSize: 22,
-    width: 30,
-    textAlign: 'center',
-    fontWeight: '700',
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 7,
+    borderWidth: 1.5,
+    borderColor: colors.tertiary,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  check: {
-    fontSize: 18,
+  checkmark: {
+    color: colors.bg,
+    fontSize: 13,
+    fontWeight: '800',
+    lineHeight: 15,
   },
   swatchRow: {
     flexDirection: 'row',
@@ -513,7 +541,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   dot: {
-    width: 8,
     height: 8,
     borderRadius: 4,
   },

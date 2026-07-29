@@ -8,7 +8,7 @@ Sunucu yok. Telemetri yok. `service_role` yok. Arayüz telefon diline göre otom
 
 - **Tanrı anahtarı asla.** Uygulama yalnızca herkese açık `anon` anahtar + sizin kendi Supabase Auth hesabınızla çalışır. `service_role` hiçbir ekranda istenmez, hiçbir yerde saklanmaz.
 - **Yetki veritabanında.** Tüm veri `security definer` RPC'lerden gelir; her RPC ilk satırda `analytics.is_admin()` kontrolü yapar. `analytics.admins` tablosunda olmayan herkes — anon anahtarı ele geçirenler dahil — `forbidden` alır. İstemciye güvenilmez.
-- **Sırlar Keychain'de.** Bağlantı bilgileri, oturum ve tercihler yalnızca iOS Keychain / Android Keystore'da (`expo-secure-store`) durur. Düz dosya yok, AsyncStorage yok, log yok.
+- **Sırlar Keychain'de.** Bağlantı bilgileri ve oturum yalnızca iOS Keychain / Android Keystore'da (`expo-secure-store`) durur; sırlar asla düz dosyaya/AsyncStorage'a yazılmaz, loglanmaz. (Sır içermeyen arayüz tercihleri — tema, metrik seçimi — AsyncStorage'dadır. Güvenli depolama çalışmayan bir istemcide uygulama sırları kaydetmeyi reddeder ve bunu açıkça söyler.)
 - **Tek ağ trafiği:** kendi Supabase projeniz. Başka hiçbir domain'e istek atılmaz.
 
 ### Neden service_role yok?
@@ -53,6 +53,8 @@ Depodaki [`supabase/setup.sql`](supabase/setup.sql), tüm metrikleri kapsayan ta
 Hiçbir şey bağlamadan tüm arayüz deterministik sahte veriyle gezilebilir (seed'li PRNG — her render aynı sayıları üretir). Gerçek moda geçmek için Ayarlar → "Bağlantıyı sil ve sıfırla" ile onboarding'e dönün.
 
 ## Bilinen sınırlar
+
+- Expo Go'da `ExpoSecureStore... is not a function` benzeri bir hata görürseniz telefonunuzdaki **Expo Go güncel değil** demektir — mağazadan güncelleyin. Uygulama bu durumda çökmez: demo modu tam çalışır, gerçek bağlantı ise sırları kaydedemeyeceğini söyleyip durur.
 
 - `expo-secure-store` Android'de 2048 bayttan büyük değerlerde uyarı verir; Supabase oturum JSON'u büyüyebilir. Şimdilik çalışır; v2'de oturum şifreli depolamaya taşınabilir.
 - Arşivlenen giriş kayıtlarındaki `user_agent`, giriş anına yakın `auth.sessions` kaydından alınır; oturum arşivden önce silindiyse cihaz "Bilinmiyor" düşer.

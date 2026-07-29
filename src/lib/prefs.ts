@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 
 import type { AccentKey } from './theme';
@@ -7,14 +8,17 @@ const CREDS_KEY = 'supalytics.creds';
 // supabase-js oturumu bu sabit anahtar altında tutulur ki wipe tek hamlede silebilsin.
 export const SESSION_KEY = 'supalytics.session';
 
-export type Focus = 'growth' | 'retention' | 'people';
+// Depolama ayrımı:
+//   · Tercihler sır DEĞİLDİR → AsyncStorage (Expo Go dahil her istemcide çalışır).
+//   · Sırlar (bağlantı bilgileri + oturum) YALNIZCA SecureStore'da durur; SecureStore
+//     bozuksa (ör. eski Expo Go istemcisi) sessizce düz depoya düşülmez — çağıran
+//     tarafa anlaşılır bir hata döner, demo modu etkilenmez.
 
 export type MetricKey = 'active' | 'signups' | 'providers' | 'devices' | 'sessions' | 'activity';
 
 export interface Prefs {
   setupDone: boolean;
   demoMode: boolean;
-  focus: Focus;
   metrics: MetricKey[];
   accent: AccentKey;
   biometricLock: boolean;
@@ -23,7 +27,6 @@ export interface Prefs {
 export const defaultPrefs: Prefs = {
   setupDone: false,
   demoMode: false,
-  focus: 'growth',
   metrics: ['active', 'signups', 'providers', 'devices', 'sessions', 'activity'],
   accent: 'supabase',
   biometricLock: false,
@@ -36,17 +39,33 @@ export interface Credentials {
 
 export async function loadPrefs(): Promise<Prefs> {
   try {
-    const raw = await SecureStore.getItemAsync(PREFS_KEY);
-    if (!raw) return defaultPrefs;
-    return { ...defaultPrefs, ...(JSON.parse(raw) as Partial<Prefs>) };
+    const raw = await AsyncStorage.getItem(PREFS_KEY);
+    if (raw) return { ...defaultPrefs, ...(JSON.parse(raw) as Partial<Prefs>) };
   } catch {
-    return defaultPrefs;
+    // okunamadıysa varsayılanlarla devam
   }
+  // Eski sürümler tercihleri SecureStore'da tutuyordu; bir kez taşı.
+  try {
+    const legacy = await SecureStore.getItemAsync(PREFS_KEY);
+    if (legacy) {
+      const parsed = { ...defaultPrefs, ...(JSON.parse(legacy) as Partial<Prefs>) };
+      AsyncStorage.setItem(PREFS_KEY, JSON.stringify(parsed)).catch(() => {});
+      SecureStore.deleteItemAsync(PREFS_KEY).catch(() => {});
+      return parsed;
+    }
+  } catch {
+    // SecureStore bu istemcide hiç çalışmıyor olabilir; sorun değil
+  }
+  return defaultPrefs;
 }
 
 export async function savePrefs(patch: Partial<Prefs>): Promise<Prefs> {
   const next = { ...(await loadPrefs()), ...patch };
-  await SecureStore.setItemAsync(PREFS_KEY, JSON.stringify(next));
+  try {
+    await AsyncStorage.setItem(PREFS_KEY, JSON.stringify(next));
+  } catch {
+    // kalıcılık başarısızsa bile uygulama oturum boyunca state ile çalışır
+  }
   return next;
 }
 
@@ -59,25 +78,43 @@ export async function loadCredentials(): Promise<Credentials | null> {
   }
 }
 
+/** Sır yazımı: SecureStore bozuksa Error fırlatır — çağıran kullanıcıya anlatır. */
 export async function saveCredentials(creds: Credentials): Promise<void> {
   await SecureStore.setItemAsync(CREDS_KEY, JSON.stringify(creds));
 }
 
 export async function wipeEverything(): Promise<void> {
-  await Promise.all(
-    [PREFS_KEY, CREDS_KEY, SESSION_KEY].map((key) =>
+  await Promise.all([
+    AsyncStorage.removeItem(PREFS_KEY).catch(() => {}),
+    ...[PREFS_KEY, CREDS_KEY, SESSION_KEY].map((key) =>
       SecureStore.deleteItemAsync(key).catch(() => {}),
     ),
-  );
+  ]);
 }
 
 // supabase-js storage adapter'ı — oturum yalnızca Keychain/Keystore'da yaşar.
+// Hiçbir çağrı fırlatmaz: bozuk istemcide oturum kalıcı olmaz (yeniden giriş
+// gerekir) ama uygulama çökmez.
 export const secureSessionStorage = {
-  getItem: (key: string) => SecureStore.getItemAsync(key),
+  getItem: async (key: string) => {
+    try {
+      return await SecureStore.getItemAsync(key);
+    } catch {
+      return null;
+    }
+  },
   setItem: async (key: string, value: string) => {
-    await SecureStore.setItemAsync(key, value);
+    try {
+      await SecureStore.setItemAsync(key, value);
+    } catch {
+      // sessiz: oturum bellekte sürer
+    }
   },
   removeItem: async (key: string) => {
-    await SecureStore.deleteItemAsync(key);
+    try {
+      await SecureStore.deleteItemAsync(key);
+    } catch {
+      // sessiz
+    }
   },
 };
