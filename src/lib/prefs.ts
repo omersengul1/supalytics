@@ -1,4 +1,3 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 
 import type { AccentKey } from './theme';
@@ -8,11 +7,9 @@ const CREDS_KEY = 'supalytics.creds';
 // supabase-js oturumu bu sabit anahtar altında tutulur ki wipe tek hamlede silebilsin.
 export const SESSION_KEY = 'supalytics.session';
 
-// Depolama ayrımı:
-//   · Tercihler sır DEĞİLDİR → AsyncStorage (Expo Go dahil her istemcide çalışır).
-//   · Sırlar (bağlantı bilgileri + oturum) YALNIZCA SecureStore'da durur; SecureStore
-//     bozuksa (ör. eski Expo Go istemcisi) sessizce düz depoya düşülmez — çağıran
-//     tarafa anlaşılır bir hata döner, demo modu etkilenmez.
+// Tüm depolama SecureStore'da: her erişim try/catch içinde, sessiz fallback.
+// SecureStore bozuksa (ör. eski Expo Go) tercihler bellekte yaşar ve oturum kapanışında silinir,
+// ama uygulama çökmez — demo modu her durumda çalışır.
 
 export type MetricKey = 'active' | 'signups' | 'providers' | 'devices' | 'sessions' | 'activity';
 
@@ -39,22 +36,10 @@ export interface Credentials {
 
 export async function loadPrefs(): Promise<Prefs> {
   try {
-    const raw = await AsyncStorage.getItem(PREFS_KEY);
+    const raw = await SecureStore.getItemAsync(PREFS_KEY);
     if (raw) return { ...defaultPrefs, ...(JSON.parse(raw) as Partial<Prefs>) };
   } catch {
-    // okunamadıysa varsayılanlarla devam
-  }
-  // Eski sürümler tercihleri SecureStore'da tutuyordu; bir kez taşı.
-  try {
-    const legacy = await SecureStore.getItemAsync(PREFS_KEY);
-    if (legacy) {
-      const parsed = { ...defaultPrefs, ...(JSON.parse(legacy) as Partial<Prefs>) };
-      AsyncStorage.setItem(PREFS_KEY, JSON.stringify(parsed)).catch(() => {});
-      SecureStore.deleteItemAsync(PREFS_KEY).catch(() => {});
-      return parsed;
-    }
-  } catch {
-    // SecureStore bu istemcide hiç çalışmıyor olabilir; sorun değil
+    // SecureStore bozuksa (ör. Expo Go eski versiyonu) varsayılanları kullan
   }
   return defaultPrefs;
 }
@@ -62,7 +47,7 @@ export async function loadPrefs(): Promise<Prefs> {
 export async function savePrefs(patch: Partial<Prefs>): Promise<Prefs> {
   const next = { ...(await loadPrefs()), ...patch };
   try {
-    await AsyncStorage.setItem(PREFS_KEY, JSON.stringify(next));
+    await SecureStore.setItemAsync(PREFS_KEY, JSON.stringify(next));
   } catch {
     // kalıcılık başarısızsa bile uygulama oturum boyunca state ile çalışır
   }
@@ -85,11 +70,10 @@ export async function saveCredentials(creds: Credentials): Promise<void> {
 
 export async function wipeEverything(): Promise<void> {
   await Promise.all([
-    AsyncStorage.removeItem(PREFS_KEY).catch(() => {}),
-    ...[PREFS_KEY, CREDS_KEY, SESSION_KEY].map((key) =>
-      SecureStore.deleteItemAsync(key).catch(() => {}),
-    ),
-  ]);
+    PREFS_KEY,
+    CREDS_KEY,
+    SESSION_KEY,
+  ].map((key) => SecureStore.deleteItemAsync(key).catch(() => {})));
 }
 
 // supabase-js storage adapter'ı — oturum yalnızca Keychain/Keystore'da yaşar.
