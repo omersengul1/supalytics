@@ -4,6 +4,7 @@ import { T } from './i18n';
 import { loadCredentials, SESSION_KEY, secureSessionStorage, type Credentials } from './prefs';
 
 let client: SupabaseClient | null = null;
+let clientCreds: Credentials | null = null;
 
 /** "https://xyz.supabase.co/" → doğrulanmış, sondaki / kırpılmış URL. */
 export function normalizeProjectUrl(input: string): string {
@@ -45,7 +46,19 @@ export function projectHost(url: string): string {
   }
 }
 
+// Aynı proje için tekrar tekrar yeni client açmak, aynı storage key'i
+// paylaşan yeni bir GoTrueClient örneği daha yaratır ("Multiple GoTrueClient
+// instances" uyarısı); Supabase bunun kimlik doğrulama durumunu bozabileceğini
+// (oturumun bazı çağrılara iliştirilmemesi dahil) açıkça belirtiyor. Aynı
+// bağlantıyla tekrar denerken var olan client'ı geri veriyoruz; yalnızca
+// bağlantı bilgisi değiştiğinde eskisinin auto-refresh döngüsünü durdurup
+// yenisini kuruyoruz.
 export function createClientFromCreds(creds: Credentials): SupabaseClient {
+  if (client && clientCreds?.url === creds.url && clientCreds?.anonKey === creds.anonKey) {
+    return client;
+  }
+  client?.auth.stopAutoRefresh().catch(() => {});
+  clientCreds = creds;
   client = createClient(creds.url, creds.anonKey, {
     auth: {
       storage: secureSessionStorage,
@@ -67,5 +80,7 @@ export async function getClient(): Promise<SupabaseClient> {
 }
 
 export function resetClient(): void {
+  client?.auth.stopAutoRefresh().catch(() => {});
   client = null;
+  clientCreds = null;
 }

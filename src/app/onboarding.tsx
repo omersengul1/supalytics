@@ -19,12 +19,7 @@ import { probeAdminAccess } from '@/lib/api';
 import { T } from '@/lib/i18n';
 import { usePrefs } from '@/lib/prefs-context';
 import { saveCredentials, type MetricKey } from '@/lib/prefs';
-import {
-  assertPublicKey,
-  createClientFromCreds,
-  normalizeProjectUrl,
-  resetClient,
-} from '@/lib/supabase';
+import { assertPublicKey, createClientFromCreds, normalizeProjectUrl } from '@/lib/supabase';
 import { accents, colors, radius, type as t, useTheme, type AccentKey } from '@/lib/theme';
 
 type StepId = 'manifesto' | 'metrics' | 'source' | 'sql' | 'connect' | 'accent';
@@ -79,7 +74,6 @@ export default function Onboarding() {
       if (!key) throw new Error(T.errKeyRequired);
       assertPublicKey(key);
       if (!email.trim() || !password) throw new Error(T.errCredsRequired);
-      resetClient();
       const client = createClientFromCreds({ url: cleanUrl, anonKey: key });
       const { error } = await client.auth.signInWithPassword({
         email: email.trim(),
