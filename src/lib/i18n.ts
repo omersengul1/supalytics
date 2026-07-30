@@ -189,7 +189,7 @@ const tr = {
   cardSessions: 'Oturumlar',
   cardSessionsSub: '30 günde',
   cardOnlineNow: 'Şu an çevrimiçi',
-  cardOnlineNowSub: 'son 1 saatte etkin',
+  cardOnlineNowSub: 'son 15 dk · sen hariç',
   cardLoginsToday: 'Bugünkü girişler',
   cardLoginsTodaySub: 'oturum açma sayısı',
   cardOpenSessions: 'Açık oturumlar',
@@ -207,6 +207,23 @@ const tr = {
   activityTitle: 'SON HAREKETLER',
   unknownUser: 'bilinmeyen kullanıcı',
 
+  // ---- kart detayları (cohort) ----
+  cohortTitles: {
+    online: 'Şu an çevrimiçi',
+    dau: 'Bugün aktif olanlar',
+    wau: 'Bu hafta aktif olanlar',
+    logins: 'Bugün giriş yapanlar',
+    signups: 'Yeni kayıtlar · 30 gün',
+  } as Record<'online' | 'dau' | 'wau' | 'logins' | 'signups', string>,
+  cohortHints: {
+    online: 'Son 15 dakikada etkinlik sinyali olan kullanıcılar (sen hariç).',
+    dau: 'Bugün giriş yapan ya da oturumu etkin olan herkes.',
+    wau: 'Son 7 günde en az bir kez aktif olan kullanıcılar.',
+    logins: 'Bugün oturum açan kullanıcılar ve giriş sayıları.',
+    signups: 'Son 30 günde hesap oluşturanlar, en yeniden eskiye.',
+  } as Record<'online' | 'dau' | 'wau' | 'logins' | 'signups', string>,
+  cohortEmpty: 'Bu pencerede kimse yok.',
+
   // ---- proje seçici ----
   projectPickerTitle: 'PROJELER',
   projectDemo: 'Demo verileri',
@@ -220,6 +237,13 @@ const tr = {
   removeProjectBody: (label: string) =>
     `"${label}" bağlantısı ve oturumu bu cihazdan silinecek. Supabase projene hiçbir şey olmaz.`,
   removeProjectConfirm: 'Kaldır',
+  projectRenameHint: 'ada dokunup değiştirebilirsin',
+  renameProjectTitle: 'Projeyi yeniden adlandır',
+  renameProjectPlaceholder: 'Görünen ad',
+  renameProjectSave: 'Kaydet',
+  fieldProjectName: 'PROJE ADI (İSTEĞE BAĞLI)',
+  fieldProjectNameHelp: 'Üst barda görünen ad; boş bırakırsan URL’den türetilir',
+  fieldProjectNamePlaceholder: 'ör. Glaze',
 
   // ---- kullanıcılar ----
   usersTitle: 'Kullanıcılar',
@@ -445,7 +469,7 @@ const en: Strings = {
   cardSessions: 'Sessions',
   cardSessionsSub: 'in 30 days',
   cardOnlineNow: 'Online now',
-  cardOnlineNowSub: 'active in the last hour',
+  cardOnlineNowSub: 'last 15 min · excluding you',
   cardLoginsToday: 'Logins today',
   cardLoginsTodaySub: 'sign-in count',
   cardOpenSessions: 'Open sessions',
@@ -463,6 +487,22 @@ const en: Strings = {
   activityTitle: 'RECENT ACTIVITY',
   unknownUser: 'unknown user',
 
+  cohortTitles: {
+    online: 'Online now',
+    dau: 'Active today',
+    wau: 'Active this week',
+    logins: 'Signed in today',
+    signups: 'New signups · 30 days',
+  },
+  cohortHints: {
+    online: 'Users with an activity signal in the last 15 minutes (excluding you).',
+    dau: 'Everyone who signed in or had an active session today.',
+    wau: 'Users active at least once in the last 7 days.',
+    logins: 'Users who signed in today, with their sign-in counts.',
+    signups: 'Accounts created in the last 30 days, newest first.',
+  },
+  cohortEmpty: 'Nobody in this window.',
+
   projectPickerTitle: 'PROJECTS',
   projectDemo: 'Demo data',
   projectAdd: 'Connect another project',
@@ -475,6 +515,13 @@ const en: Strings = {
   removeProjectBody: (label) =>
     `The "${label}" connection and session will be erased from this device. Nothing happens to your Supabase project.`,
   removeProjectConfirm: 'Remove',
+  projectRenameHint: 'tap to rename',
+  renameProjectTitle: 'Rename project',
+  renameProjectPlaceholder: 'Display name',
+  renameProjectSave: 'Save',
+  fieldProjectName: 'PROJECT NAME (OPTIONAL)',
+  fieldProjectNameHelp: 'Shown in the top bar; derived from the URL if left empty',
+  fieldProjectNamePlaceholder: 'e.g. Glaze',
 
   usersTitle: 'Users',
   searchPlaceholder: 'Search name or email…',

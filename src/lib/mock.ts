@@ -3,6 +3,8 @@
 
 import type {
   ActivityRow,
+  CohortKey,
+  CohortUser,
   DeviceSlice,
   ProviderSlice,
   SeriesPoint,
@@ -188,6 +190,42 @@ export function mockUsers(q: string, offset = 0, limit = 50): UserRow[] {
     )
     .slice(offset, offset + limit)
     .map(({ device: _device, ...row }) => row);
+}
+
+export function mockCohort(cohort: CohortKey, maxRows: number): CohortUser[] {
+  const rnd = mulberry32(BASE_SEED + 401);
+  const now = anchorNow().getTime();
+  const users = allUsers();
+  const within = (u: MockUser, ms: number) =>
+    !!u.last_sign_in_at && now - new Date(u.last_sign_in_at).getTime() < ms;
+
+  let picked: MockUser[];
+  switch (cohort) {
+    case 'online':
+      picked = users.filter((u) => within(u, 3600_000)).slice(0, 7);
+      break;
+    case 'dau':
+    case 'logins':
+      picked = users.filter((u) => within(u, 86_400_000));
+      break;
+    case 'wau':
+      picked = users.filter((u) => within(u, 7 * 86_400_000));
+      break;
+    case 'signups':
+      picked = [...users]
+        .filter((u) => now - new Date(u.created_at).getTime() < 30 * 86_400_000)
+        .sort((a, b) => b.created_at.localeCompare(a.created_at));
+      break;
+  }
+  return picked.slice(0, maxRows).map((u) => ({
+    user_id: u.id,
+    email: u.email,
+    name: u.name,
+    avatar_url: u.avatar_url,
+    device: u.device,
+    events: cohort === 'signups' ? 1 : Math.floor(rnd() * 3) + 1,
+    last_seen: (cohort === 'signups' ? u.created_at : u.last_sign_in_at) ?? u.created_at,
+  }));
 }
 
 export function mockTopUsers(maxRows: number): TopUser[] {

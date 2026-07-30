@@ -24,6 +24,7 @@ export default function AddProject() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
+  const [label, setLabel] = useState('');
   const [url, setUrl] = useState('');
   const [anonKey, setAnonKey] = useState('');
   const [email, setEmail] = useState('');
@@ -35,7 +36,7 @@ export default function AddProject() {
     setConnecting(true);
     setError(null);
     try {
-      await connectProject({ url, anonKey, email, password });
+      await connectProject({ url, anonKey, email, password, label });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.back();
     } catch (e) {
@@ -66,6 +67,14 @@ export default function AddProject() {
             {T.whereFindBody}
           </Text>
         </View>
+        <Field
+          label={T.fieldProjectName}
+          help={T.fieldProjectNameHelp}
+          value={label}
+          onChangeText={setLabel}
+          placeholder={T.fieldProjectNamePlaceholder}
+          maxLength={40}
+        />
         <Field
           label={T.fieldUrl}
           help={T.fieldUrlHelp}

@@ -5,6 +5,7 @@ import {
   FlatList,
   Modal,
   Pressable,
+  RefreshControl,
   StyleSheet,
   Text,
   TextInput,
@@ -31,6 +32,7 @@ export default function Users() {
   const [query, setQuery] = useState('');
   const [rows, setRows] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   // Son sayfa tam dolu geldiyse devamı olabilir; eksik geldiyse liste bitti.
   const [hasMore, setHasMore] = useState(false);
@@ -82,6 +84,12 @@ export default function Users() {
       load(queryRef.current);
     }, [load]),
   );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await load(queryRef.current);
+    setRefreshing(false);
+  }, [load]);
 
   const loadMore = useCallback(async () => {
     if (loadingMore || loading || !hasMore) return;
@@ -155,6 +163,15 @@ export default function Users() {
           keyExtractor={(item) => item.id}
           renderItem={renderRow}
           contentContainerStyle={{ paddingBottom: insets.bottom + 110 }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={accentColor}
+              colors={[accentColor]}
+              progressBackgroundColor={colors.surface}
+            />
+          }
           onEndReached={loadMore}
           onEndReachedThreshold={0.4}
           ListFooterComponent={

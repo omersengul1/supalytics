@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { colors, radius, type as t, useTheme } from '@/lib/theme';
 
@@ -9,17 +9,28 @@ interface MetricCardProps {
   subTone?: 'default' | 'accent' | 'danger';
   style?: StyleProp<ViewStyle>;
   children?: React.ReactNode;
+  /** Verilirse kart dokunulabilir olur (detay listesi açmak için). */
+  onPress?: () => void;
 }
 
 // Mat içerik kartı: cam yalnızca navigasyonda, kartlar sakin durur.
-export function MetricCard({ label, value, sub, subTone = 'default', style, children }: MetricCardProps) {
+export function MetricCard({
+  label,
+  value,
+  sub,
+  subTone = 'default',
+  style,
+  children,
+  onPress,
+}: MetricCardProps) {
   const { accentColor } = useTheme();
   const subColor =
     subTone === 'accent' ? accentColor : subTone === 'danger' ? colors.danger : colors.tertiary;
-  return (
-    <View style={[styles.card, style]}>
+  const body = (
+    <>
       <Text style={[t.label, styles.label]} numberOfLines={1}>
         {label}
+        {onPress ? '  ›' : ''}
       </Text>
       <Text style={t.metric} numberOfLines={1} adjustsFontSizeToFit>
         {value}
@@ -30,7 +41,17 @@ export function MetricCard({ label, value, sub, subTone = 'default', style, chil
         </Text>
       ) : null}
       {children}
-    </View>
+    </>
+  );
+  if (!onPress) return <View style={[styles.card, style]}>{body}</View>;
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      style={({ pressed }) => [styles.card, style, pressed && { opacity: 0.75 }]}
+    >
+      {body}
+    </Pressable>
   );
 }
 

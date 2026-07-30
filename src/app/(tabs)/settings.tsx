@@ -12,6 +12,7 @@ import {
   StyleSheet,
   Switch,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -27,11 +28,12 @@ const GITHUB_URL = 'https://github.com/omersengul1/supalytics';
 const METRIC_KEYS: MetricKey[] = ['active', 'signups', 'providers', 'devices', 'sessions', 'activity'];
 
 export default function Settings() {
-  const { prefs, update, resetToDefaults, removeProject } = usePrefs();
+  const { prefs, update, resetToDefaults, removeProject, renameProject } = usePrefs();
   const { accent, accentColor, setAccent } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [sqlVisible, setSqlVisible] = useState(false);
+  const [renaming, setRenaming] = useState<{ id: string; label: string } | null>(null);
 
   const activeLabel = prefs.demoMode
     ? T.connDemo
@@ -127,15 +129,17 @@ export default function Settings() {
         {prefs.projects.map((p) => {
           const active = !prefs.demoMode && p.id === prefs.activeProjectId;
           return (
-            <Row key={p.id} label={p.label} sub={active ? T.projectActiveSub : undefined}>
-              <Pressable
-                onPress={() => confirmRemoveProject(p.id, p.label)}
-                hitSlop={10}
-                accessibilityLabel={T.removeProjectTitle}
-              >
-                <Text style={[t.body, { color: colors.danger, fontSize: 16 }]}>✕</Text>
-              </Pressable>
-            </Row>
+            <Pressable key={p.id} onPress={() => setRenaming({ id: p.id, label: p.label })}>
+              <Row label={p.label} sub={active ? T.projectActiveSub : T.projectRenameHint}>
+                <Pressable
+                  onPress={() => confirmRemoveProject(p.id, p.label)}
+                  hitSlop={10}
+                  accessibilityLabel={T.removeProjectTitle}
+                >
+                  <Text style={[t.body, { color: colors.danger, fontSize: 16 }]}>✕</Text>
+                </Pressable>
+              </Row>
+            </Pressable>
           );
         })}
         <Pressable onPress={() => router.push('/add-project')}>
@@ -198,6 +202,15 @@ export default function Settings() {
         </Pressable>
       </View>
 
+      <RenameModal
+        state={renaming}
+        onClose={() => setRenaming(null)}
+        onSave={(id, label) => {
+          renameProject(id, label);
+          setRenaming(null);
+        }}
+      />
+
       <Modal
         visible={sqlVisible}
         animationType="slide"
@@ -217,6 +230,65 @@ export default function Settings() {
         </View>
       </Modal>
     </ScrollView>
+  );
+}
+
+// Çapraz-platform yeniden adlandırma diyaloğu (Alert.prompt yalnız iOS'ta var).
+function RenameModal({
+  state,
+  onClose,
+  onSave,
+}: {
+  state: { id: string; label: string } | null;
+  onClose: () => void;
+  onSave: (id: string, label: string) => void;
+}) {
+  const { accentColor } = useTheme();
+  const [value, setValue] = useState('');
+
+  // Modal her açılışta mevcut adla başlar.
+  const [openedFor, setOpenedFor] = useState<string | null>(null);
+  if (state && state.id !== openedFor) {
+    setOpenedFor(state.id);
+    setValue(state.label);
+  }
+
+  const save = () => {
+    if (state && value.trim()) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      onSave(state.id, value.trim());
+    }
+  };
+
+  return (
+    <Modal visible={!!state} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.renameBackdrop} onPress={onClose} />
+      <View style={styles.renameCard}>
+        <Text style={[t.body, { fontWeight: '700', fontSize: 16 }]}>{T.renameProjectTitle}</Text>
+        <TextInput
+          value={value}
+          onChangeText={setValue}
+          placeholder={T.renameProjectPlaceholder}
+          placeholderTextColor={colors.tertiary}
+          autoFocus
+          autoCorrect={false}
+          maxLength={40}
+          onSubmitEditing={save}
+          returnKeyType="done"
+          style={styles.renameInput}
+        />
+        <View style={styles.renameActions}>
+          <Pressable onPress={onClose} hitSlop={8}>
+            <Text style={[t.label, { color: colors.secondary }]}>{T.cancel}</Text>
+          </Pressable>
+          <Pressable onPress={save} hitSlop={8} disabled={!value.trim()}>
+            <Text style={[t.label, { color: accentColor, opacity: value.trim() ? 1 : 0.4 }]}>
+              {T.renameProjectSave}
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -329,5 +401,36 @@ const styles = StyleSheet.create({
   modalContent: {
     paddingHorizontal: 20,
     paddingBottom: 40,
+  },
+  renameBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  renameCard: {
+    position: 'absolute',
+    left: 28,
+    right: 28,
+    top: '32%',
+    backgroundColor: colors.surface,
+    borderRadius: radius.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.hairline,
+    padding: 18,
+    gap: 14,
+  },
+  renameInput: {
+    backgroundColor: colors.elevated,
+    borderRadius: radius.control,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.hairline,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    fontSize: 15,
+    color: colors.text,
+  },
+  renameActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 24,
   },
 });

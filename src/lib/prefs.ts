@@ -61,6 +61,11 @@ function hostOf(url: string): string {
   }
 }
 
+/** Varsayılan proje etiketi: host'un ".supabase.co" soneki kırpılmış hali. */
+export function defaultProjectLabel(url: string): string {
+  return hostOf(url).replace(/\.supabase\.co$/, '');
+}
+
 export async function loadPrefs(): Promise<Prefs> {
   let prefs: Prefs | null = null;
   try {
@@ -69,7 +74,21 @@ export async function loadPrefs(): Promise<Prefs> {
   } catch {
     // SecureStore bozuksa (ör. Expo Go eski versiyonu) varsayılanları kullan
   }
-  const merged = prefs ?? defaultPrefs;
+  let merged = prefs ?? defaultPrefs;
+
+  // Eski sürümlerin tam-host etiketleri kısaltılır (bir kez). Kullanıcının
+  // verdiği özel adlar ".supabase.co" ile bitmeyeceği için etkilenmez.
+  if (merged.projects.some((p) => p.label.endsWith('.supabase.co'))) {
+    merged = {
+      ...merged,
+      projects: merged.projects.map((p) =>
+        p.label.endsWith('.supabase.co')
+          ? { ...p, label: p.label.replace(/\.supabase\.co$/, '') }
+          : p,
+      ),
+    };
+    SecureStore.setItemAsync(PREFS_KEY, JSON.stringify(merged)).catch(() => {});
+  }
 
   // Tek-proje sürümünden geçiş: eski sabit anahtarlardaki bağlantı + oturum,
   // "p1" kimlikli ilk projeye taşınır (bir kez).
@@ -80,7 +99,7 @@ export async function loadPrefs(): Promise<Prefs> {
         const creds = JSON.parse(legacy) as Credentials;
         const migrated: Prefs = {
           ...merged,
-          projects: [{ id: 'p1', label: hostOf(creds.url) }],
+          projects: [{ id: 'p1', label: defaultProjectLabel(creds.url) }],
           activeProjectId: 'p1',
         };
         await SecureStore.setItemAsync(credsKeyFor('p1'), legacy);

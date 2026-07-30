@@ -1,7 +1,7 @@
 import * as Haptics from 'expo-haptics';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Sparkline } from '@/components/sparkline';
@@ -24,6 +24,7 @@ export default function Charts() {
   const [signups, setSignups] = useState<SeriesPoint[]>([]);
   const [providers, setProviders] = useState<ProviderSlice[]>([]);
   const [devices, setDevices] = useState<DeviceSlice[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const metricSet = useMemo(() => new Set(prefs.metrics), [prefs.metrics]);
@@ -62,6 +63,12 @@ export default function Charts() {
     }, [days, load]),
   );
 
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await load(days);
+    setRefreshing(false);
+  }, [load, days]);
+
   return (
     <ScrollView
       style={styles.screen}
@@ -69,6 +76,16 @@ export default function Charts() {
         styles.content,
         { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 110 },
       ]}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={accentColor}
+          colors={[accentColor]}
+          progressBackgroundColor={colors.surface}
+          progressViewOffset={insets.top}
+        />
+      }
     >
       <Text style={[t.title, { marginBottom: 14 }]}>{T.chartsTitle}</Text>
 

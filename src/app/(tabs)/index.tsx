@@ -1,9 +1,10 @@
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Avatar } from '@/components/avatar';
+import { CohortSheet } from '@/components/cohort-sheet';
 import { MetricCard } from '@/components/metric-card';
 import { ProjectSwitcher } from '@/components/project-switcher';
 import { PulseDot } from '@/components/pulse-dot';
@@ -30,6 +31,7 @@ import { usePrefs } from '@/lib/prefs-context';
 import { colors, radius, type as t, useTheme } from '@/lib/theme';
 import type {
   ActivityRow,
+  CohortKey,
   DeviceSlice,
   ProviderSlice,
   SeriesPoint,
@@ -51,6 +53,7 @@ export default function Overview() {
   const [activity, setActivity] = useState<ActivityRow[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [cohort, setCohort] = useState<CohortKey | null>(null);
 
   const metricSet = useMemo(() => new Set(prefs.metrics), [prefs.metrics]);
 
@@ -127,6 +130,7 @@ export default function Overview() {
           label={T.cardWeeklyActive}
           value={compact(totals.wau)}
           sub={T.cardMonthSub(compact(totals.mau))}
+          onPress={() => setCohort('wau')}
         />
         <MetricCard
           style={styles.half}
@@ -140,12 +144,14 @@ export default function Overview() {
           value={compact(totals.online_now)}
           sub={T.cardOnlineNowSub}
           subTone="accent"
+          onPress={() => setCohort('online')}
         />
         <MetricCard
           style={styles.half}
           label={T.cardLoginsToday}
           value={compact(totals.logins_today)}
           sub={T.cardLoginsTodaySub}
+          onPress={() => setCohort('logins')}
         />
       </View>
     );
@@ -158,6 +164,7 @@ export default function Overview() {
           value={compact(signupTotal)}
           sub={T.cardSignupsSub(compact(totals.new_week), compact(totals.new_today))}
           subTone="accent"
+          onPress={() => setCohort('signups')}
         >
           <Sparkline data={signups.map((p) => p.users)} height={56} />
         </MetricCard>
@@ -245,7 +252,16 @@ export default function Overview() {
         { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 110 },
       ]}
       refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={accentColor} />
+        // Android çemberi tintColor'ı okumaz (colors/progressBackgroundColor gerekir)
+        // ve çentiğin altında kalmasın diye safe-area kadar aşağıdan başlar.
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={accentColor}
+          colors={[accentColor]}
+          progressBackgroundColor={colors.surface}
+          progressViewOffset={insets.top}
+        />
       }
     >
       <View style={styles.topRow}>
@@ -253,10 +269,16 @@ export default function Overview() {
         <ProjectSwitcher />
       </View>
 
-      <View style={styles.hero}>
+      <Pressable
+        style={styles.hero}
+        disabled={!heroIsActive}
+        onPress={() => setCohort('dau')}
+        accessibilityRole={heroIsActive ? 'button' : undefined}
+      >
         <View style={styles.heroLabelRow}>
           <Text style={[t.label, styles.heroLabel]}>
             {heroIsActive ? T.heroActive : T.heroUsers}
+            {heroIsActive ? '  ›' : ''}
           </Text>
           <PulseDot />
         </View>
@@ -273,7 +295,7 @@ export default function Overview() {
             {T.newTodaySub(compact(totals.new_today))}
           </Text>
         ) : null}
-      </View>
+      </Pressable>
 
       {error ? (
         <Text style={[t.caption, { color: colors.danger, marginBottom: 12, lineHeight: 17 }]}>
@@ -322,6 +344,8 @@ export default function Overview() {
           ))}
         </View>
       ) : null}
+
+      <CohortSheet cohort={cohort} onClose={() => setCohort(null)} />
     </ScrollView>
   );
 }

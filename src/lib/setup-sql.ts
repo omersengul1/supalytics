@@ -318,7 +318,8 @@ const DROPS = () =>
   )}
 drop function if exists public.supalytics_totals();
 drop function if exists public.supalytics_user_list(text, int, int);
-drop function if exists public.supalytics_top_users(int, int);`;
+drop function if exists public.supalytics_top_users(int, int);
+drop function if exists public.supalytics_cohort(text, int);`;
 
 // Aktiflik ÜÇ sinyalin birleşimi: last_sign_in_at (her girişte güncellenir,
 // asla silinmez) + canlı oturum hareketi + olay geçmişi. Audit log boş/kapalı
@@ -394,8 +395,17 @@ begin
      )),
     (select count(*) from auth.sessions s
       where s.not_after is null or s.not_after > now()),
-    (select count(*) from auth.sessions s
-      where coalesce(s.refreshed_at, s.updated_at, s.created_at) > now() - interval '60 minutes'),
+    (select count(distinct a.uid) from (
+       select u.id as uid from auth.users u
+        where u.last_sign_in_at >= now() - interval '15 minutes'
+       union
+       select s.user_id from auth.sessions s
+        where coalesce(s.refreshed_at, s.updated_at, s.created_at) >= now() - interval '15 minutes'
+       union
+       select ev.user_id from analytics.events_since(now() - interval '15 minutes') ev
+        where ev.action in ('login', 'token_refreshed') and ev.user_id is not null
+     ) a
+      where a.uid is distinct from auth.uid()),
     (select count(distinct f.user_id) from auth.mfa_factors f where f.status = 'verified');
 end;
 $$;
@@ -556,6 +566,141 @@ $$;
 
 revoke all on function public.supalytics_top_users(int, int) from public, anon;
 grant execute on function public.supalytics_top_users(int, int) to authenticated;`;
+
+// Kart detayları: bir metriğe dokununca "o metriği oluşturan kullanıcılar"
+// listesi. online: son 15 dk (bakan admin hariç — panele bakmak seni
+// çevrimiçi saymasın); dau/wau: aktivite birleşimi; logins: yalnız giriş
+// sinyalleri; signups: yeni kayıtlar.
+const RPC_COHORT = (history: boolean) =>
+  `create function public.supalytics_cohort(cohort text, max_rows int default 100)
+returns table (
+  user_id    uuid,
+  email      text,
+  name       text,
+  avatar_url text,
+  device     text,
+  events     bigint,
+  last_seen  timestamptz
+)
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  since timestamptz;
+begin
+  if not analytics.is_admin() then raise exception 'forbidden'; end if;
+
+  if cohort = 'signups' or cohort = 'signups_today' then
+    since := case when cohort = 'signups_today' then date_trunc('day', now())
+                  else now() - interval '30 days' end;
+    return query
+    select u.id, u.email::text,
+           coalesce(u.raw_user_meta_data ->> 'full_name', u.raw_user_meta_data ->> 'name'),
+           coalesce(u.raw_user_meta_data ->> 'avatar_url', u.raw_user_meta_data ->> 'picture'),
+           analytics.device_of((select s.user_agent from auth.sessions s
+                                 where s.user_id = u.id
+                                 order by s.created_at desc limit 1)),
+           1::bigint,
+           u.created_at
+    from auth.users u
+    where u.created_at >= since
+    order by u.created_at desc
+    limit least(greatest(max_rows, 1), 500);
+
+  elsif cohort = 'logins' then
+    since := date_trunc('day', now());
+    return query
+    select u.id, u.email::text,
+           coalesce(u.raw_user_meta_data ->> 'full_name', u.raw_user_meta_data ->> 'name'),
+           coalesce(u.raw_user_meta_data ->> 'avatar_url', u.raw_user_meta_data ->> 'picture'),
+           ${
+             history
+               ? `analytics.device_of(coalesce(
+             (select s.user_agent from auth.sessions s where s.user_id = u.id
+               order by coalesce(s.refreshed_at, s.updated_at, s.created_at) desc limit 1),
+             (select h.user_agent from analytics.login_history h
+               where h.user_id = u.id and h.user_agent is not null
+               order by h.created_at desc limit 1)
+           )),`
+               : `analytics.device_of((select s.user_agent from auth.sessions s
+                                 where s.user_id = u.id
+                                 order by coalesce(s.refreshed_at, s.updated_at, s.created_at) desc
+                                 limit 1)),`
+           }
+           count(*)::bigint,
+           max(act.ts)
+    from (
+      select u2.id as uid, date_trunc('minute', u2.last_sign_in_at) as ts
+        from auth.users u2 where u2.last_sign_in_at >= since
+      union
+      select s.user_id, date_trunc('minute', s.created_at)
+        from auth.sessions s where s.created_at >= since
+      union
+      select ev.user_id, date_trunc('minute', ev.created_at)
+        from analytics.events_since(since) ev
+       where ev.action = 'login' and ev.user_id is not null
+    ) act
+    join auth.users u on u.id = act.uid
+    group by u.id
+    order by max(act.ts) desc
+    limit least(greatest(max_rows, 1), 500);
+
+  else
+    since := case cohort
+      when 'online' then now() - interval '15 minutes'
+      when 'dau'    then date_trunc('day', now())
+      when 'wau'    then now() - interval '7 days'
+      else null
+    end;
+    if since is null then raise exception 'unknown cohort: %', cohort; end if;
+    return query
+    select u.id, u.email::text,
+           coalesce(u.raw_user_meta_data ->> 'full_name', u.raw_user_meta_data ->> 'name'),
+           coalesce(u.raw_user_meta_data ->> 'avatar_url', u.raw_user_meta_data ->> 'picture'),
+           ${
+             history
+               ? `analytics.device_of(coalesce(
+             (select s.user_agent from auth.sessions s where s.user_id = u.id
+               order by coalesce(s.refreshed_at, s.updated_at, s.created_at) desc limit 1),
+             (select h.user_agent from analytics.login_history h
+               where h.user_id = u.id and h.user_agent is not null
+               order by h.created_at desc limit 1)
+           )),`
+               : `analytics.device_of((select s.user_agent from auth.sessions s
+                                 where s.user_id = u.id
+                                 order by coalesce(s.refreshed_at, s.updated_at, s.created_at) desc
+                                 limit 1)),`
+           }
+           count(*)::bigint,
+           max(act.ts)
+    from (
+      select u2.id as uid, date_trunc('minute', u2.last_sign_in_at) as ts
+        from auth.users u2 where u2.last_sign_in_at >= since
+      union
+      select s.user_id, date_trunc('minute', coalesce(s.refreshed_at, s.updated_at, s.created_at))
+        from auth.sessions s
+       where coalesce(s.refreshed_at, s.updated_at, s.created_at) >= since
+      union
+      select s.user_id, date_trunc('minute', s.created_at)
+        from auth.sessions s where s.created_at >= since
+      union
+      select ev.user_id, date_trunc('minute', ev.created_at)
+        from analytics.events_since(since) ev
+       where ev.action in ('login', 'token_refreshed') and ev.user_id is not null
+    ) act
+    join auth.users u on u.id = act.uid
+    where cohort <> 'online' or u.id is distinct from auth.uid()
+    group by u.id
+    order by max(act.ts) desc
+    limit least(greatest(max_rows, 1), 500);
+  end if;
+end;
+$$;
+
+revoke all on function public.supalytics_cohort(text, int) from public, anon;
+grant execute on function public.supalytics_cohort(text, int) to authenticated;`;
 
 const RPC_WHOAMI = () =>
   `${c(
@@ -819,6 +964,7 @@ export function buildSetupSql(metrics: MetricKey[]): string {
     RPC_PROVIDERS(),
     RPC_USER_LIST(),
     RPC_TOP_USERS(),
+    RPC_COHORT(history),
     RPC_WHOAMI(),
   );
   if (history) {

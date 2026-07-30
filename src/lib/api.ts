@@ -3,6 +3,7 @@
 
 import {
   mockActivity,
+  mockCohort,
   mockDauSeries,
   mockDevices,
   mockProviders,
@@ -17,6 +18,8 @@ import { getClient } from './supabase';
 import {
   zeroTotals,
   type ActivityRow,
+  type CohortKey,
+  type CohortUser,
   type DeviceSlice,
   type ProviderSlice,
   type SeriesPoint,
@@ -130,6 +133,11 @@ export function fetchUsers(q: string, offset = 0): Promise<UserRow[]> {
 export function fetchTopUsers(days = 30, maxRows = 5): Promise<TopUser[]> {
   if (demoMode) return demo(mockTopUsers(maxRows));
   return rpc<TopUser[]>('supalytics_top_users', { days, max_rows: maxRows });
+}
+
+export function fetchCohort(cohort: CohortKey, maxRows = 200): Promise<CohortUser[]> {
+  if (demoMode) return demo(mockCohort(cohort, maxRows));
+  return rpc<CohortUser[]>('supalytics_cohort', { cohort, max_rows: maxRows });
 }
 
 export function fetchActivity(maxEvents = 50): Promise<ActivityRow[]> {

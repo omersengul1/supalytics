@@ -13,7 +13,9 @@ import { configureApi, probeAdminAccess } from './api';
 import { T } from './i18n';
 import {
   defaultPrefs,
+  defaultProjectLabel,
   deleteProjectSecrets,
+  loadCredentials,
   loadPrefs,
   saveCredentials,
   savePrefs,
@@ -24,7 +26,6 @@ import {
   assertPublicKey,
   createClientForProject,
   normalizeProjectUrl,
-  projectHost,
   resetClient,
 } from './supabase';
 
@@ -33,6 +34,8 @@ export interface ConnectInput {
   anonKey: string;
   email: string;
   password: string;
+  /** İsteğe bağlı görünen ad; boşsa host'tan türetilir. */
+  label?: string;
 }
 
 interface PrefsValue {
@@ -45,6 +48,7 @@ interface PrefsValue {
   switchProject: (id: string) => void;
   switchToDemo: () => void;
   removeProject: (id: string) => void;
+  renameProject: (id: string, label: string) => void;
 }
 
 const PrefsContext = createContext<PrefsValue>({
@@ -56,6 +60,7 @@ const PrefsContext = createContext<PrefsValue>({
   switchProject: () => {},
   switchToDemo: () => {},
   removeProject: () => {},
+  renameProject: () => {},
 });
 
 // Prefs tek kez yüklenir, tek kopya üzerinden okunur; yazmalar arka planda SecureStore'a akar.
@@ -103,9 +108,15 @@ export function PrefsProvider({ children }: { children: ReactNode }) {
       assertPublicKey(key);
       if (!input.email.trim() || !input.password) throw new Error(T.errCredsRequired);
 
-      const existing = prefsRef.current.projects.find(
-        (p) => p.label === projectHost(cleanUrl),
-      );
+      // Aynı proje URL'si zaten ekliyse yeni kayıt açma — bilgileri tazele.
+      let existing: ProjectRef | undefined;
+      for (const p of prefsRef.current.projects) {
+        const stored = await loadCredentials(p.id);
+        if (stored?.url === cleanUrl) {
+          existing = p;
+          break;
+        }
+      }
       const id = existing?.id ?? `p${Date.now().toString(36)}`;
       const client = createClientForProject(id, { url: cleanUrl, anonKey: key });
       try {
@@ -134,10 +145,14 @@ export function PrefsProvider({ children }: { children: ReactNode }) {
         resetClient();
         throw new Error(T.errSecureStore);
       }
-      const ref: ProjectRef = existing ?? { id, label: projectHost(cleanUrl) };
+      const customLabel = input.label?.trim();
+      const ref: ProjectRef = {
+        id,
+        label: customLabel || existing?.label || defaultProjectLabel(cleanUrl),
+      };
       update({
         projects: existing
-          ? prefsRef.current.projects
+          ? prefsRef.current.projects.map((p) => (p.id === id ? ref : p))
           : [...prefsRef.current.projects, ref],
         activeProjectId: id,
         demoMode: false,
@@ -160,6 +175,19 @@ export function PrefsProvider({ children }: { children: ReactNode }) {
     if (prefsRef.current.demoMode) return;
     update({ demoMode: true });
   }, [update]);
+
+  const renameProject = useCallback(
+    (id: string, label: string) => {
+      const clean = label.trim();
+      if (!clean) return;
+      update({
+        projects: prefsRef.current.projects.map((p) =>
+          p.id === id ? { ...p, label: clean } : p,
+        ),
+      });
+    },
+    [update],
+  );
 
   const removeProject = useCallback(
     (id: string) => {
@@ -187,8 +215,19 @@ export function PrefsProvider({ children }: { children: ReactNode }) {
       switchProject,
       switchToDemo,
       removeProject,
+      renameProject,
     }),
-    [prefs, ready, update, resetToDefaults, connectProject, switchProject, switchToDemo, removeProject],
+    [
+      prefs,
+      ready,
+      update,
+      resetToDefaults,
+      connectProject,
+      switchProject,
+      switchToDemo,
+      removeProject,
+      renameProject,
+    ],
   );
 
   return <PrefsContext.Provider value={value}>{children}</PrefsContext.Provider>;

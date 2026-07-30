@@ -68,6 +68,19 @@ export interface TopUser {
   last_seen: string;
 }
 
+/** Kart detayı: metriğe dokununca açılan "bu sayıyı oluşturan kullanıcılar". */
+export type CohortKey = 'online' | 'dau' | 'wau' | 'logins' | 'signups';
+
+export interface CohortUser {
+  user_id: string;
+  email: string | null;
+  name: string | null;
+  avatar_url: string | null;
+  device: string;
+  events: number;
+  last_seen: string;
+}
+
 export interface UserEvent {
   action: string;
   ip: string | null;
