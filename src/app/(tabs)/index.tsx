@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Avatar } from '@/components/avatar';
 import { CohortSheet } from '@/components/cohort-sheet';
 import { MetricCard } from '@/components/metric-card';
+import { UserProfileSheet } from '@/components/user-profile-sheet';
 import { ProjectSwitcher } from '@/components/project-switcher';
 import { PulseDot } from '@/components/pulse-dot';
 import { Sparkline } from '@/components/sparkline';
@@ -33,6 +34,7 @@ import type {
   ActivityRow,
   CohortKey,
   DeviceSlice,
+  ProfileTarget,
   ProviderSlice,
   SeriesPoint,
   TopUser,
@@ -54,6 +56,7 @@ export default function Overview() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cohort, setCohort] = useState<CohortKey | null>(null);
+  const [profile, setProfile] = useState<ProfileTarget | null>(null);
 
   const metricSet = useMemo(() => new Set(prefs.metrics), [prefs.metrics]);
 
@@ -309,7 +312,17 @@ export default function Overview() {
         <View style={styles.listCard}>
           <Text style={[t.label, styles.listTitle]}>{T.topUsersTitle}</Text>
           {topUsers.map((u, i) => (
-            <View key={u.user_id} style={[styles.listRow, i === 0 && { borderTopWidth: 0 }]}>
+            <Pressable
+              key={u.user_id}
+              onPress={() =>
+                setProfile({ id: u.user_id, email: u.email, name: u.name, avatar_url: u.avatar_url })
+              }
+              style={({ pressed }) => [
+                styles.listRow,
+                i === 0 && { borderTopWidth: 0 },
+                pressed && { opacity: 0.7 },
+              ]}
+            >
               <Avatar url={u.avatar_url} seed={u.name ?? u.email ?? '?'} size={34} />
               <View style={{ flex: 1, gap: 1 }}>
                 <Text style={[t.body, { fontSize: 14 }]} numberOfLines={1}>
@@ -322,7 +335,7 @@ export default function Overview() {
               <Text style={[t.caption, { color: accentColor, fontWeight: '700' }]}>
                 {T.topUserEvents(compact(u.events))}
               </Text>
-            </View>
+            </Pressable>
           ))}
         </View>
       ) : null}
@@ -346,6 +359,7 @@ export default function Overview() {
       ) : null}
 
       <CohortSheet cohort={cohort} onClose={() => setCohort(null)} />
+      <UserProfileSheet target={profile} onClose={() => setProfile(null)} />
     </ScrollView>
   );
 }

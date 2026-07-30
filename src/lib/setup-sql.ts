@@ -59,6 +59,14 @@ as $$
   );
 $$;
 
+${c(
+  'Mobil uygulama istekleri tarayıcı UA’sı göndermez: iOS native "CFNetwork/Darwin",',
+  "Mobile app requests don't send browser UAs: iOS native is \"CFNetwork/Darwin\",",
+)}
+${c(
+  'Android native "okhttp/Dalvik" gönderir — sıralama bu yüzden önemli.',
+  'Android native sends "okhttp/Dalvik" — ordering matters because of this.',
+)}
 create or replace function analytics.device_of(ua text)
 returns text
 language sql
@@ -66,12 +74,13 @@ immutable
 set search_path = ''
 as $$
   select case
-    when ua is null or ua = ''             then 'Unknown'
-    when ua ~* 'iphone|ipad|ipod|ios'      then 'iOS'
-    when ua ~* 'android'                   then 'Android'
-    when ua ~* 'mac os x|macintosh|darwin' then 'macOS'
-    when ua ~* 'windows'                   then 'Windows'
-    when ua ~* 'linux|x11'                 then 'Linux'
+    when ua is null or ua = ''              then 'Unknown'
+    when ua ~* 'iphone|ipad|ipod|ios'       then 'iOS'
+    when ua ~* 'android|okhttp|dalvik'      then 'Android'
+    when ua ~* 'mac os x|macintosh'         then 'macOS'
+    when ua ~* 'cfnetwork|darwin'           then 'iOS'
+    when ua ~* 'windows'                    then 'Windows'
+    when ua ~* 'linux|x11'                  then 'Linux'
     else 'Other'
   end;
 $$;`;
@@ -319,7 +328,8 @@ const DROPS = () =>
 drop function if exists public.supalytics_totals();
 drop function if exists public.supalytics_user_list(text, int, int);
 drop function if exists public.supalytics_top_users(int, int);
-drop function if exists public.supalytics_cohort(text, int);`;
+drop function if exists public.supalytics_cohort(text, int);
+drop function if exists public.supalytics_user_profile(uuid);`;
 
 // Aktiflik ÜÇ sinyalin birleşimi: last_sign_in_at (her girişte güncellenir,
 // asla silinmez) + canlı oturum hareketi + olay geçmişi. Audit log boş/kapalı
@@ -702,6 +712,85 @@ $$;
 revoke all on function public.supalytics_cohort(text, int) from public, anon;
 grant execute on function public.supalytics_cohort(text, int) to authenticated;`;
 
+// Tek kullanıcının profil kartı: kimlik + durum rozetleri + cihaz + 30 günlük
+// giriş sayısı. Zaman çizelgesi ayrı (supalytics_user_detail).
+const RPC_USER_PROFILE = (history: boolean) =>
+  `create function public.supalytics_user_profile(uid uuid)
+returns table (
+  id              uuid,
+  email           text,
+  name            text,
+  avatar_url      text,
+  providers       text[],
+  created_at      timestamptz,
+  last_sign_in_at timestamptz,
+  confirmed       boolean,
+  mfa             boolean,
+  device          text,
+  events_30d      bigint
+)
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+begin
+  if not analytics.is_admin() then raise exception 'forbidden'; end if;
+  return query
+  select
+    u.id,
+    u.email::text,
+    coalesce(
+      u.raw_user_meta_data ->> 'full_name',
+      u.raw_user_meta_data ->> 'name',
+      u.raw_user_meta_data ->> 'user_name',
+      u.raw_user_meta_data ->> 'preferred_username'
+    ),
+    coalesce(u.raw_user_meta_data ->> 'avatar_url', u.raw_user_meta_data ->> 'picture'),
+    coalesce(
+      (select array_agg(distinct i.provider::text) from auth.identities i where i.user_id = u.id),
+      '{}'::text[]
+    ),
+    u.created_at,
+    u.last_sign_in_at,
+    (u.email_confirmed_at is not null or u.phone_confirmed_at is not null),
+    exists (select 1 from auth.mfa_factors f
+             where f.user_id = u.id and f.status = 'verified'),
+    ${
+      history
+        ? `analytics.device_of(coalesce(
+      (select s.user_agent from auth.sessions s where s.user_id = u.id
+        order by coalesce(s.refreshed_at, s.updated_at, s.created_at) desc limit 1),
+      (select h.user_agent from analytics.login_history h
+        where h.user_id = u.id and h.user_agent is not null
+        order by h.created_at desc limit 1)
+    )),`
+        : `analytics.device_of((select s.user_agent from auth.sessions s
+                          where s.user_id = u.id
+                          order by coalesce(s.refreshed_at, s.updated_at, s.created_at) desc
+                          limit 1)),`
+    }
+    (select count(*) from (
+       select date_trunc('minute', u2.last_sign_in_at) as ts
+         from auth.users u2
+        where u2.id = u.id and u2.last_sign_in_at >= now() - interval '30 days'
+       union
+       select date_trunc('minute', s.created_at)
+         from auth.sessions s
+        where s.user_id = u.id and s.created_at >= now() - interval '30 days'
+       union
+       select date_trunc('minute', ev.created_at)
+         from analytics.events_since(now() - interval '30 days') ev
+        where ev.user_id = u.id and ev.action in ('login', 'token_refreshed')
+     ) acts)
+  from auth.users u
+  where u.id = uid;
+end;
+$$;
+
+revoke all on function public.supalytics_user_profile(uuid) from public, anon;
+grant execute on function public.supalytics_user_profile(uuid) to authenticated;`;
+
 const RPC_WHOAMI = () =>
   `${c(
     'Teşhis: bu bağlantının veritabanına hangi rolle/kimlikle ulaştığını gösterir.',
@@ -965,6 +1054,7 @@ export function buildSetupSql(metrics: MetricKey[]): string {
     RPC_USER_LIST(),
     RPC_TOP_USERS(),
     RPC_COHORT(history),
+    RPC_USER_PROFILE(history),
     RPC_WHOAMI(),
   );
   if (history) {

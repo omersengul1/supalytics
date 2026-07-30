@@ -3,7 +3,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
-  Modal,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -14,13 +13,13 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Avatar } from '@/components/avatar';
-import { fetchUserDetail, fetchUsers, USERS_PAGE_SIZE } from '@/lib/api';
-import { actionLabel, deviceLabel, providerGlyph, timeAgo } from '@/lib/format';
+import { UserProfileSheet } from '@/components/user-profile-sheet';
+import { fetchUsers, USERS_PAGE_SIZE } from '@/lib/api';
+import { providerGlyph, timeAgo } from '@/lib/format';
 import { T } from '@/lib/i18n';
 import { usePrefs } from '@/lib/prefs-context';
-import { needsHistory } from '@/lib/setup-sql';
 import { colors, radius, type as t, useTheme } from '@/lib/theme';
-import type { UserEvent, UserRow } from '@/lib/types';
+import type { UserRow } from '@/lib/types';
 
 const DAY_MS = 86_400_000;
 
@@ -186,94 +185,20 @@ export default function Users() {
           }
         />
       )}
-      <UserSheet
-        user={selected}
-        historyEnabled={needsHistory(prefs.metrics)}
+      <UserProfileSheet
+        target={
+          selected
+            ? {
+                id: selected.id,
+                email: selected.email,
+                name: selected.name,
+                avatar_url: selected.avatar_url,
+              }
+            : null
+        }
         onClose={() => setSelected(null)}
       />
     </View>
-  );
-}
-
-// Satıra dokununca açılan zaman çizelgesi sheet'i. Giriş geçmişi metrikleri
-// hiç seçilmediyse (SQL'de arşiv yok) zaman çizelgesi yerine açıklama gösterir.
-function UserSheet({
-  user,
-  historyEnabled,
-  onClose,
-}: {
-  user: UserRow | null;
-  historyEnabled: boolean;
-  onClose: () => void;
-}) {
-  const { accentColor } = useTheme();
-  const insets = useSafeAreaInsets();
-  const [events, setEvents] = useState<UserEvent[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!user || !historyEnabled) return;
-    setEvents(null);
-    setError(null);
-    fetchUserDetail(user.id, 50)
-      .then(setEvents)
-      .catch((e) => setError(e instanceof Error ? e.message : T.errHistoryFetch));
-  }, [user, historyEnabled]);
-
-  return (
-    <Modal visible={!!user} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose} />
-      <View style={[styles.sheet, { paddingBottom: insets.bottom + 20 }]}>
-        <View style={styles.grabber} />
-        <View style={styles.sheetHead}>
-          {user ? (
-            <Avatar url={user.avatar_url} seed={user.name ?? user.email ?? '?'} size={44} />
-          ) : null}
-          <View style={{ flex: 1, gap: 2 }}>
-            <Text style={[t.body, { fontWeight: '700', fontSize: 17 }]} numberOfLines={1}>
-              {user?.name ?? user?.email ?? T.noEmail}
-            </Text>
-            {user?.name && user?.email ? (
-              <Text style={t.caption} numberOfLines={1}>
-                {user.email}
-              </Text>
-            ) : null}
-          </View>
-        </View>
-        <Text style={[t.caption, { marginTop: 8 }]}>
-          {T.sheetJoined(user ? timeAgo(user.created_at) : '')} · {T.sheetProviders}:{' '}
-          {user?.providers.join(', ') || '—'}
-        </Text>
-        <View style={styles.sheetDivider} />
-        {!historyEnabled ? (
-          <Text style={[t.caption, { lineHeight: 17, paddingBottom: 8 }]}>
-            {T.sheetHistoryOff}
-          </Text>
-        ) : null}
-        {error ? <Text style={[t.caption, { color: colors.danger }]}>{error}</Text> : null}
-        {historyEnabled && !events && !error ? <ActivityIndicator color={accentColor} /> : null}
-        {events ? (
-          <FlatList
-            data={events}
-            keyExtractor={(_, i) => String(i)}
-            style={{ maxHeight: 380 }}
-            ListEmptyComponent={<Text style={t.caption}>{T.sheetEmpty}</Text>}
-            renderItem={({ item }) => (
-              <View style={styles.eventRow}>
-                <View style={[styles.eventDot, { backgroundColor: accentColor }]} />
-                <View style={{ flex: 1, gap: 2 }}>
-                  <Text style={[t.body, { fontSize: 14 }]}>{actionLabel(item.action)}</Text>
-                  <Text style={t.caption}>
-                    {deviceLabel(item.device)}
-                    {item.ip ? ` · ${item.ip}` : ''} · {timeAgo(item.created_at)}
-                  </Text>
-                </View>
-              </View>
-            )}
-          />
-        ) : null}
-      </View>
-    </Modal>
   );
 }
 
@@ -308,48 +233,5 @@ const styles = StyleSheet.create({
   empty: {
     textAlign: 'center',
     marginTop: 48,
-  },
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-  },
-  sheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radius.card,
-    borderTopRightRadius: radius.card,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
-    paddingHorizontal: 20,
-    paddingTop: 10,
-  },
-  grabber: {
-    alignSelf: 'center',
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.elevated,
-    marginBottom: 14,
-  },
-  sheetHead: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  sheetDivider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: colors.hairline,
-    marginVertical: 14,
-  },
-  eventRow: {
-    flexDirection: 'row',
-    gap: 10,
-    paddingVertical: 8,
-    alignItems: 'flex-start',
-  },
-  eventDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginTop: 6,
   },
 });

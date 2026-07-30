@@ -81,6 +81,29 @@ export interface CohortUser {
   last_seen: string;
 }
 
+/** Tek kullanıcının profil kartı (supalytics_user_profile). */
+export interface UserProfile {
+  id: string;
+  email: string | null;
+  name: string | null;
+  avatar_url: string | null;
+  providers: string[];
+  created_at: string;
+  last_sign_in_at: string | null;
+  confirmed: boolean;
+  mfa: boolean;
+  device: string;
+  events_30d: number;
+}
+
+/** Listelerden profile geçerken taşınan asgari kimlik (başlık anında çizilir). */
+export interface ProfileTarget {
+  id: string;
+  email?: string | null;
+  name?: string | null;
+  avatar_url?: string | null;
+}
+
 export interface UserEvent {
   action: string;
   ip: string | null;

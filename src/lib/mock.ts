@@ -11,6 +11,7 @@ import type {
   TopUser,
   Totals,
   UserEvent,
+  UserProfile,
   UserRow,
 } from './types';
 
@@ -264,6 +265,26 @@ export function mockActivity(maxEvents: number): ActivityRow[] {
     minutesBack += Math.floor(rnd() * 14) + 2;
   }
   return rows;
+}
+
+export function mockUserProfile(uid: string): UserProfile | null {
+  const users = allUsers();
+  const idx = users.findIndex((u) => u.id === uid);
+  const user = users[idx === -1 ? 0 : idx];
+  const rnd = mulberry32(BASE_SEED + 509 + (idx === -1 ? 0 : idx));
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    avatar_url: user.avatar_url,
+    providers: user.providers,
+    created_at: user.created_at,
+    last_sign_in_at: user.last_sign_in_at,
+    confirmed: idx % 11 !== 3,
+    mfa: idx % 7 === 0,
+    device: user.device,
+    events_30d: user.last_sign_in_at ? Math.floor(rnd() * 38) + 2 : 0,
+  };
 }
 
 export function mockUserDetail(uid: string, maxEvents: number): UserEvent[] {

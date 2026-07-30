@@ -255,6 +255,15 @@ const tr = {
   sheetJoined: (x: string) => `katıldı: ${x}`,
   sheetProviders: 'sağlayıcı',
   sheetEmpty: 'Bu kullanıcı için kayıtlı hareket yok.',
+  profileTimelineTitle: 'ZAMAN ÇİZELGESİ',
+  profileJoined: 'Katıldı',
+  profileLastSeen: 'Son görülme',
+  profileDevice: 'Cihaz',
+  profileSignins: 'Giriş · 30 gün',
+  profileProviders: 'Sağlayıcı',
+  badgeConfirmed: 'DOĞRULANMIŞ',
+  badgeUnconfirmed: 'DOĞRULANMAMIŞ',
+  badgeMfa: 'MFA',
   sheetHistoryOff:
     'Giriş geçmişi bu kurulumda kapalı (aktiflik/cihaz/akış metriği seçilmedi). Ayarlar’dan açıp güncel SQL’i çalıştırırsan zaman çizelgesi burada görünür.',
 
@@ -532,6 +541,15 @@ const en: Strings = {
   sheetJoined: (x) => `joined: ${x}`,
   sheetProviders: 'providers',
   sheetEmpty: 'No recorded activity for this user.',
+  profileTimelineTitle: 'TIMELINE',
+  profileJoined: 'Joined',
+  profileLastSeen: 'Last seen',
+  profileDevice: 'Device',
+  profileSignins: 'Sign-ins · 30d',
+  profileProviders: 'Providers',
+  badgeConfirmed: 'CONFIRMED',
+  badgeUnconfirmed: 'UNCONFIRMED',
+  badgeMfa: 'MFA',
   sheetHistoryOff:
     'Sign-in history is off in this setup (no activity/device/feed metric selected). Enable one in Settings and re-run the up-to-date SQL to see the timeline here.',
 

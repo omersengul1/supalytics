@@ -78,7 +78,9 @@ as $$
 $$;
 
 -- User agent'tan kaba cihaz sınıfı. Sıra önemli: Android UA'ları "Linux",
--- modern iPad UA'ları "Macintosh" içerir.
+-- modern iPad UA'ları "Macintosh" içerir. Mobil uygulama istekleri tarayıcı
+-- UA'sı göndermez: iOS native "AppAdı/1 CFNetwork/... Darwin/...", Android
+-- native "okhttp/x" ya da "Dalvik/..." gönderir — bu kalıplar da tanınır.
 create or replace function analytics.device_of(ua text)
 returns text
 language sql
@@ -88,8 +90,9 @@ as $$
   select case
     when ua is null or ua = ''                       then 'Unknown'
     when ua ~* 'iphone|ipad|ipod|ios'                then 'iOS'
-    when ua ~* 'android'                             then 'Android'
-    when ua ~* 'mac os x|macintosh|darwin'           then 'macOS'
+    when ua ~* 'android|okhttp|dalvik'               then 'Android'
+    when ua ~* 'mac os x|macintosh'                  then 'macOS'
+    when ua ~* 'cfnetwork|darwin'                    then 'iOS'
     when ua ~* 'windows'                             then 'Windows'
     when ua ~* 'linux|x11'                           then 'Linux'
     else 'Other'
@@ -284,6 +287,7 @@ drop function if exists public.supalytics_totals();
 drop function if exists public.supalytics_user_list(text, int, int);
 drop function if exists public.supalytics_top_users(int, int);
 drop function if exists public.supalytics_cohort(text, int);
+drop function if exists public.supalytics_user_profile(uuid);
 
 create function public.supalytics_totals()
 returns table (
@@ -720,6 +724,74 @@ begin
 end;
 $$;
 
+-- Tek kullanıcının profil kartı: kimlik + durum rozetleri + cihaz + 30 günlük
+-- giriş sayısı. Zaman çizelgesi ayrı (supalytics_user_detail).
+create function public.supalytics_user_profile(uid uuid)
+returns table (
+  id              uuid,
+  email           text,
+  name            text,
+  avatar_url      text,
+  providers       text[],
+  created_at      timestamptz,
+  last_sign_in_at timestamptz,
+  confirmed       boolean,
+  mfa             boolean,
+  device          text,
+  events_30d      bigint
+)
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+begin
+  if not analytics.is_admin() then raise exception 'forbidden'; end if;
+  return query
+  select
+    u.id,
+    u.email::text,
+    coalesce(
+      u.raw_user_meta_data ->> 'full_name',
+      u.raw_user_meta_data ->> 'name',
+      u.raw_user_meta_data ->> 'user_name',
+      u.raw_user_meta_data ->> 'preferred_username'
+    ),
+    coalesce(u.raw_user_meta_data ->> 'avatar_url', u.raw_user_meta_data ->> 'picture'),
+    coalesce(
+      (select array_agg(distinct i.provider::text) from auth.identities i where i.user_id = u.id),
+      '{}'::text[]
+    ),
+    u.created_at,
+    u.last_sign_in_at,
+    (u.email_confirmed_at is not null or u.phone_confirmed_at is not null),
+    exists (select 1 from auth.mfa_factors f
+             where f.user_id = u.id and f.status = 'verified'),
+    analytics.device_of(coalesce(
+      (select s.user_agent from auth.sessions s where s.user_id = u.id
+        order by coalesce(s.refreshed_at, s.updated_at, s.created_at) desc limit 1),
+      (select h.user_agent from analytics.login_history h
+        where h.user_id = u.id and h.user_agent is not null
+        order by h.created_at desc limit 1)
+    )),
+    (select count(*) from (
+       select date_trunc('minute', u2.last_sign_in_at) as ts
+         from auth.users u2
+        where u2.id = u.id and u2.last_sign_in_at >= now() - interval '30 days'
+       union
+       select date_trunc('minute', s.created_at)
+         from auth.sessions s
+        where s.user_id = u.id and s.created_at >= now() - interval '30 days'
+       union
+       select date_trunc('minute', ev.created_at)
+         from analytics.events_since(now() - interval '30 days') ev
+        where ev.user_id = u.id and ev.action in ('login', 'token_refreshed')
+     ) acts)
+  from auth.users u
+  where u.id = uid;
+end;
+$$;
+
 create or replace function public.supalytics_user_detail(
   uid        uuid,
   max_events int default 50
@@ -814,6 +886,7 @@ revoke all on function public.supalytics_device_breakdown(int)        from publi
 revoke all on function public.supalytics_user_list(text, int, int)    from public, anon;
 revoke all on function public.supalytics_top_users(int, int)          from public, anon;
 revoke all on function public.supalytics_cohort(text, int)            from public, anon;
+revoke all on function public.supalytics_user_profile(uuid)           from public, anon;
 revoke all on function public.supalytics_user_detail(uuid, int)       from public, anon;
 revoke all on function public.supalytics_recent_activity(int)         from public, anon;
 revoke all on function public.supalytics_whoami()                     from public;
@@ -826,6 +899,7 @@ grant execute on function public.supalytics_device_breakdown(int)     to authent
 grant execute on function public.supalytics_user_list(text, int, int) to authenticated;
 grant execute on function public.supalytics_top_users(int, int)       to authenticated;
 grant execute on function public.supalytics_cohort(text, int)         to authenticated;
+grant execute on function public.supalytics_user_profile(uuid)        to authenticated;
 grant execute on function public.supalytics_user_detail(uuid, int)    to authenticated;
 grant execute on function public.supalytics_recent_activity(int)      to authenticated;
 grant execute on function public.supalytics_whoami()                  to anon, authenticated;

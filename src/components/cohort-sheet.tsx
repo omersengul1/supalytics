@@ -3,11 +3,12 @@ import { ActivityIndicator, FlatList, Modal, Pressable, StyleSheet, Text, View }
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Avatar } from '@/components/avatar';
+import { UserProfileSheet } from '@/components/user-profile-sheet';
 import { fetchCohort } from '@/lib/api';
 import { deviceLabel, timeAgo } from '@/lib/format';
 import { T } from '@/lib/i18n';
 import { colors, radius, type as t, useTheme } from '@/lib/theme';
-import type { CohortKey, CohortUser } from '@/lib/types';
+import type { CohortKey, CohortUser, ProfileTarget } from '@/lib/types';
 
 // Metrik kartına dokununca açılan detay: o sayıyı OLUŞTURAN kullanıcılar —
 // kim, hangi cihazdan, en son ne zaman.
@@ -22,11 +23,13 @@ export function CohortSheet({
   const insets = useSafeAreaInsets();
   const [rows, setRows] = useState<CohortUser[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [profile, setProfile] = useState<ProfileTarget | null>(null);
 
   useEffect(() => {
     if (!cohort) return;
     setRows(null);
     setError(null);
+    setProfile(null);
     fetchCohort(cohort, 200)
       .then(setRows)
       .catch((e) => setError(e instanceof Error ? e.message : T.errFetchGeneric));
@@ -66,7 +69,17 @@ export function CohortSheet({
               </Text>
             }
             renderItem={({ item }) => (
-              <View style={styles.row}>
+              <Pressable
+                onPress={() =>
+                  setProfile({
+                    id: item.user_id,
+                    email: item.email,
+                    name: item.name,
+                    avatar_url: item.avatar_url,
+                  })
+                }
+                style={({ pressed }) => [styles.row, pressed && { opacity: 0.7 }]}
+              >
                 <Avatar url={item.avatar_url} seed={item.name ?? item.email ?? '?'} size={38} />
                 <View style={{ flex: 1, gap: 2 }}>
                   <Text style={[t.body, { fontSize: 14 }]} numberOfLines={1}>
@@ -79,10 +92,14 @@ export function CohortSheet({
                       : ''}
                   </Text>
                 </View>
-              </View>
+                <Text style={[t.caption, { color: colors.tertiary, fontSize: 16 }]}>›</Text>
+              </Pressable>
             )}
           />
         ) : null}
+
+        {/* İç içe modal: liste açıkken profil üstte açılır, kapatınca listeye dönülür. */}
+        <UserProfileSheet target={profile} onClose={() => setProfile(null)} />
       </View>
     </Modal>
   );

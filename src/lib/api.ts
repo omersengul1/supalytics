@@ -11,6 +11,7 @@ import {
   mockTopUsers,
   mockTotals,
   mockUserDetail,
+  mockUserProfile,
   mockUsers,
 } from './mock';
 import { T } from './i18n';
@@ -26,6 +27,7 @@ import {
   type TopUser,
   type Totals,
   type UserEvent,
+  type UserProfile,
   type UserRow,
 } from './types';
 
@@ -148,4 +150,10 @@ export function fetchActivity(maxEvents = 50): Promise<ActivityRow[]> {
 export function fetchUserDetail(uid: string, maxEvents = 50): Promise<UserEvent[]> {
   if (demoMode) return demo(mockUserDetail(uid, maxEvents));
   return rpc<UserEvent[]>('supalytics_user_detail', { uid, max_events: maxEvents });
+}
+
+export async function fetchUserProfile(uid: string): Promise<UserProfile | null> {
+  if (demoMode) return demo(mockUserProfile(uid));
+  const rows = await rpc<UserProfile[]>('supalytics_user_profile', { uid });
+  return rows?.[0] ?? null;
 }
