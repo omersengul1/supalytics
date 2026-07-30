@@ -98,6 +98,13 @@ export function UserProfileSheet({
             />
           </View>
         ) : null}
+        {profile?.user_agent ? (
+          // Ham istemci imzası: "Diğer" görünen platformların ne gönderdiği
+          // buradan okunur (yeni kalıp bildirmek için birebir).
+          <Text style={[t.caption, { marginTop: 8, fontSize: 10 }]} numberOfLines={2}>
+            {profile.user_agent}
+          </Text>
+        ) : null}
 
         <View style={styles.divider} />
         <Text style={[t.label, { letterSpacing: 0.8, marginBottom: 4 }]}>

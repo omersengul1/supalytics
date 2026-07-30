@@ -283,9 +283,17 @@ export function mockUserProfile(uid: string): UserProfile | null {
     confirmed: idx % 11 !== 3,
     mfa: idx % 7 === 0,
     device: user.device,
+    user_agent: MOCK_UAS[user.device] ?? null,
     events_30d: user.last_sign_in_at ? Math.floor(rnd() * 38) + 2 : 0,
   };
 }
+
+const MOCK_UAS: Record<string, string> = {
+  iOS: 'glaze/2.1 CFNetwork/1494.0.7 Darwin/23.4.0',
+  Android: 'okhttp/4.12.0',
+  macOS: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Safari/605.1.15',
+  Windows: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/126.0 Safari/537.36',
+};
 
 export function mockUserDetail(uid: string, maxEvents: number): UserEvent[] {
   const users = allUsers();

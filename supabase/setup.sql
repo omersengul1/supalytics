@@ -93,7 +93,7 @@ as $$
     when ua ~* 'android|okhttp|dalvik'               then 'Android'
     when ua ~* 'mac os x|macintosh'                  then 'macOS'
     when ua ~* 'cfnetwork|darwin'                    then 'iOS'
-    when ua ~* 'windows'                             then 'Windows'
+    when ua ~* 'windows|win64|win32|wow64'           then 'Windows'
     when ua ~* 'linux|x11'                           then 'Linux'
     else 'Other'
   end;
@@ -738,6 +738,7 @@ returns table (
   confirmed       boolean,
   mfa             boolean,
   device          text,
+  user_agent      text,
   events_30d      bigint
 )
 language plpgsql
@@ -745,8 +746,19 @@ stable
 security definer
 set search_path = ''
 as $$
+declare
+  ua text;
 begin
   if not analytics.is_admin() then raise exception 'forbidden'; end if;
+  -- Ham user-agent da döner: "Diğer" görünen bir platformun gerçekte ne
+  -- gönderdiği profilden okunabilsin (yeni kalıp eklemek kolaylaşır).
+  ua := coalesce(
+    (select s.user_agent from auth.sessions s where s.user_id = uid
+      order by coalesce(s.refreshed_at, s.updated_at, s.created_at) desc limit 1),
+    (select h.user_agent from analytics.login_history h
+      where h.user_id = uid and h.user_agent is not null
+      order by h.created_at desc limit 1)
+  );
   return query
   select
     u.id,
@@ -767,13 +779,8 @@ begin
     (u.email_confirmed_at is not null or u.phone_confirmed_at is not null),
     exists (select 1 from auth.mfa_factors f
              where f.user_id = u.id and f.status = 'verified'),
-    analytics.device_of(coalesce(
-      (select s.user_agent from auth.sessions s where s.user_id = u.id
-        order by coalesce(s.refreshed_at, s.updated_at, s.created_at) desc limit 1),
-      (select h.user_agent from analytics.login_history h
-        where h.user_id = u.id and h.user_agent is not null
-        order by h.created_at desc limit 1)
-    )),
+    analytics.device_of(ua),
+    ua,
     (select count(*) from (
        select date_trunc('minute', u2.last_sign_in_at) as ts
          from auth.users u2

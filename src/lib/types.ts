@@ -93,6 +93,7 @@ export interface UserProfile {
   confirmed: boolean;
   mfa: boolean;
   device: string;
+  user_agent: string | null;
   events_30d: number;
 }
 
