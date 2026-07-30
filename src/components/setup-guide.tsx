@@ -10,10 +10,18 @@ import { colors, radius, type as t, useTheme } from '@/lib/theme';
 
 // Neden-SQL açıklaması + adımlar + kopyalanabilir script.
 // Onboarding'in SQL adımı ve Ayarlar'daki "Kurulum SQL'i" aynı bileşeni kullanır.
-export function SetupGuide({ metrics }: { metrics: MetricKey[] }) {
+// adminEmail verilirse (onboarding) script hazır üretilir: düzenleme adımı yoktur.
+export function SetupGuide({
+  metrics,
+  adminEmail,
+}: {
+  metrics: MetricKey[];
+  adminEmail?: string;
+}) {
   const { accentColor } = useTheme();
-  const sql = useMemo(() => buildSetupSql(metrics), [metrics]);
+  const sql = useMemo(() => buildSetupSql(metrics, adminEmail), [metrics, adminEmail]);
   const history = needsHistory(metrics);
+  const steps = adminEmail ? T.sqlStepsEmbedded : T.sqlSteps;
 
   return (
     <View style={styles.wrap}>
@@ -30,7 +38,7 @@ export function SetupGuide({ metrics }: { metrics: MetricKey[] }) {
       </View>
 
       <Text style={[t.label, styles.stepsTitle]}>{T.sqlStepsTitle}</Text>
-      {T.sqlSteps.map((step, i) => (
+      {steps.map((step, i) => (
         <View key={i} style={styles.stepRow}>
           <Text style={[styles.stepNum, { color: accentColor }]}>{i + 1}</Text>
           <Text style={styles.stepText}>{step}</Text>

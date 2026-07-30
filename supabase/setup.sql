@@ -42,6 +42,14 @@ create table if not exists analytics.admins (
   created_at timestamptz not null default now()
 );
 
+-- E-posta tabanlı admin listesi: user ID aramaya gerek bırakmaz. Güvenlik
+-- şartı: eşleşen hesabın e-postası DOĞRULANMIŞ olmalı — açık kayıtlı
+-- projelerde başkasının adına hesap açan biri yetki alamaz.
+create table if not exists analytics.admin_emails (
+  email      text primary key,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists analytics.login_history (
   id         uuid primary key,            -- auth.audit_log_entries.id (doğal dedup)
   user_id    uuid,                        -- bilerek FK yok: silinen kullanıcının geçmişi kalır
@@ -58,6 +66,7 @@ create index if not exists login_history_user_created_idx
   on analytics.login_history (user_id, created_at desc);
 
 alter table analytics.admins enable row level security;
+alter table analytics.admin_emails enable row level security;
 alter table analytics.login_history enable row level security;
 revoke all on all tables in schema analytics from public, anon, authenticated;
 
@@ -74,6 +83,13 @@ set search_path = ''
 as $$
   select exists (
     select 1 from analytics.admins a where a.user_id = auth.uid()
+  )
+  or exists (
+    select 1
+    from auth.users u
+    join analytics.admin_emails e on lower(u.email::text) = lower(e.email)
+    where u.id = auth.uid()
+      and u.email_confirmed_at is not null
   );
 $$;
 
@@ -994,10 +1010,16 @@ notify pgrst, 'reload schema';
 
 -- ----------------------------------------------------------------------------
 -- >>> EDIT ME — admin ekleyin (bunsuz panel her istekte "forbidden" görür).
--- Authentication → Users sayfasından kendi user ID'nizi kopyalayın, satırların
--- başındaki "-- " işaretlerini kaldırıp çalıştırın:
+-- En kolay yol E-POSTA: aşağıdaki iki satırın başındaki "-- " işaretini silin,
+-- kendi e-postanızı yazın, çalıştırın. Bu e-postayla (doğrulanmış) giriş yapan
+-- hesap paneli görebilir.
+--
+-- insert into analytics.admin_emails (email)
+-- values ('admin@ornek.com') on conflict (email) do nothing;
+--
+-- Alternatif (user ID ile; e-posta doğrulaması gerekmez — Authentication →
+-- Users sayfasındaki "User UID"):
 --
 -- insert into analytics.admins (user_id, note)
--- values ('BURAYA-KENDI-USER-ID-NIZ', 'ben')
--- on conflict (user_id) do nothing;
+-- values ('USER-ID', 'ben') on conflict (user_id) do nothing;
 -- ----------------------------------------------------------------------------

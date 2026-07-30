@@ -17,9 +17,17 @@ import { SetupGuide } from '@/components/setup-guide';
 import { T } from '@/lib/i18n';
 import { usePrefs } from '@/lib/prefs-context';
 import type { MetricKey } from '@/lib/prefs';
+import { projectUrlFromKey } from '@/lib/supabase';
 import { accents, colors, radius, type as t, useTheme, type AccentKey } from '@/lib/theme';
 
-type StepId = 'manifesto' | 'metrics' | 'source' | 'sql' | 'connect' | 'accent';
+type StepId =
+  | 'manifesto'
+  | 'metrics'
+  | 'source'
+  | 'adminEmail'
+  | 'sql'
+  | 'connect'
+  | 'accent';
 type SourceMode = 'real' | 'demo' | null;
 
 const METRIC_KEYS: MetricKey[] = ['active', 'signups', 'providers', 'devices', 'sessions', 'activity'];
@@ -41,9 +49,12 @@ export default function Onboarding() {
   const [connectError, setConnectError] = useState<string | null>(null);
 
   // Adım yolu kaynak seçimine göre dallanır: demo, SQL/bağlantı adımlarını atlar.
+  // Gerçek modda e-posta SQL'den ÖNCE sorulur: script o adrese göre hazır üretilir.
   const path = useMemo<StepId[]>(() => {
     const base: StepId[] = ['manifesto', 'metrics', 'source'];
-    return mode === 'demo' ? [...base, 'accent'] : [...base, 'sql', 'connect', 'accent'];
+    return mode === 'demo'
+      ? [...base, 'accent']
+      : [...base, 'adminEmail', 'sql', 'connect', 'accent'];
   }, [mode]);
   const step = path[Math.min(stepIndex, path.length - 1)];
 
@@ -165,10 +176,25 @@ export default function Onboarding() {
             </>
           )}
 
+          {step === 'adminEmail' && (
+            <>
+              <Text style={styles.question}>{T.adminEmailTitle}</Text>
+              <Text style={styles.hint}>{T.adminEmailHint}</Text>
+              <Field
+                label={T.fieldEmail}
+                help={T.adminEmailFieldHelp}
+                value={email}
+                onChangeText={setEmail}
+                placeholder="you@example.com"
+                keyboardType="email-address"
+              />
+            </>
+          )}
+
           {step === 'sql' && (
             <>
               <Text style={styles.question}>{T.sqlTitle}</Text>
-              <SetupGuide metrics={metrics} />
+              <SetupGuide metrics={metrics} adminEmail={email.trim()} />
             </>
           )}
 
@@ -183,19 +209,26 @@ export default function Onboarding() {
                 </Text>
               </View>
               <Field
+                label={T.fieldAnon}
+                help={T.fieldAnonHelp}
+                value={anonKey}
+                onChangeText={(v: string) => {
+                  setAnonKey(v);
+                  // JWT anahtarlar proje ref'ini taşır: URL'yi kendimiz doldururuz.
+                  if (!url.trim()) {
+                    const derived = projectUrlFromKey(v);
+                    if (derived) setUrl(derived);
+                  }
+                }}
+                placeholder="eyJhbGciOi… / sb_publishable_…"
+              />
+              <Field
                 label={T.fieldUrl}
                 help={T.fieldUrlHelp}
                 value={url}
                 onChangeText={setUrl}
                 placeholder="https://xxxx.supabase.co"
                 keyboardType="url"
-              />
-              <Field
-                label={T.fieldAnon}
-                help={T.fieldAnonHelp}
-                value={anonKey}
-                onChangeText={setAnonKey}
-                placeholder="eyJhbGciOi… / sb_publishable_…"
               />
               <Field
                 label={T.fieldEmail}
@@ -274,6 +307,9 @@ export default function Onboarding() {
         {step === 'metrics' && <PrimaryButton label={T.next} onPress={advance} />}
         {step === 'source' && (
           <PrimaryButton label={T.next} onPress={advance} disabled={mode === null} />
+        )}
+        {step === 'adminEmail' && (
+          <PrimaryButton label={T.next} onPress={advance} disabled={!email.includes('@')} />
         )}
         {step === 'sql' && <PrimaryButton label={T.sqlDone} onPress={advance} />}
         {step === 'connect' && (

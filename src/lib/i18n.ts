@@ -58,7 +58,7 @@ const tr = {
   errSecretKey:
     'Bu gizli (secret) bir anahtar. Uygulama yalnızca herkese açık (publishable/anon) anahtarla çalışır.',
   errNotAdmin:
-    'Giriş başarılı; ama bu hesap analytics.admins listesinde değil. Kurulum SQL’inin sonundaki ">>> EDIT ME" adımını bu hesabın user ID’siyle çalıştırın, sonra tekrar deneyin.',
+    'Giriş başarılı; ama bu hesap admin olarak tanınmıyor. Kurulum SQL’inin sonundaki admin satırının BU hesabın e-postasını içerdiğinden ve e-postanın doğrulanmış olduğundan emin olun (Authentication → Users’ta hesabın yanında "Confirmed" yazmalı), sonra tekrar deneyin.',
   errPermissionDenied:
     "Fonksiyon veritabanında var ama yetki API’ye henüz yansımamış olabilir — Supabase’in şema önbelleği yeni grant’ları birkaç dakika geç yansıtır. SQL Editor’de tek başına şunu çalıştırıp önbelleği hemen tazele: notify pgrst, 'reload schema'; sonra tekrar dene. Hâlâ olmuyorsa kurulum SQL’ini (en alttaki \">>> EDIT ME\" dahil) baştan sona yeniden çalıştır.",
   errConnectGeneric: 'Bağlantı kurulamadı.',
@@ -121,12 +121,19 @@ const tr = {
   sourceDemo: 'Demo verilerle gez',
   sourceDemoDesc: 'Hiçbir şey gerekmez; panel deterministik sahte veriyle dolar.',
 
+  // ---- onboarding: yönetici e-postası ----
+  adminEmailTitle: 'Yönetici e-postan',
+  adminEmailHint:
+    'Paneli bu hesapla açacaksın; SQL script’i bu adrese göre HAZIR üretilir — içinde hiçbir şey düzenlemen gerekmez.',
+  adminEmailFieldHelp:
+    'Projendeki bir Auth kullanıcısının e-postası. Hesap yoksa: uygulamandan bu adresle kayıt olup e-postayı doğrulaman yeterli — yetki otomatik tanınır.',
+
   // ---- onboarding: SQL kurulumu ----
   sqlTitle: 'Veritabanı kurulumu',
   sqlWhy: [
     'Supabase, kullanıcı verilerini (auth şeması) API’ye hiç açmaz — anon anahtarla auth.users okunamaz. Seçtiğin verileri dışarı çıkarmanın tek temiz yolu, veritabanının içinde tanımlı güvenli fonksiyonlar (RPC). Aşağıdaki script tam olarak bunları kuruyor.',
     'Yetki kontrolü de bu fonksiyonların ilk satırında: admin listesinde olmayan herkes — anon anahtarı ele geçirenler dahil — "forbidden" alır. Bu kontrol telefonda olsaydı anlamı olmazdı; anahtar zaten herkese açık.',
-    'Script’in en altındaki ">>> EDIT ME" satırı seni işte bu admin listesine ekler — kendi user ID’nle. Onsuz veritabanı isteğin kimden geldiğini "admin listesinde yok" diye değerlendirir ve sana bile forbidden döner. Bir sonraki ekrandaki e-posta/şifre de tam bu yüzden var: uygulamanın veritabanına "ben o admin hesabıyım" diye kanıtlamasının tek yolu, senin adına gerçek bir Supabase Auth girişi yapmak. Yeni hesap açmana gerek yok — projendeki var olan bir kullanıcıyı kullan.',
+    'Script’in sonundaki satır, admin yetkisini verdiğin e-postaya bağlar: o adresle (doğrulanmış e-posta şartıyla) giriş yapan hesap paneli görebilir. Bağlantı ekranındaki şifre de bu yüzden var: uygulama, senin adına gerçek bir Supabase Auth girişi yaparak "ben o adminim" diye kanıtlar.',
   ],
   sqlWhyArchive:
     'Ayrıca aktiflik/cihaz verileri için: Supabase giriş loglarını kalıcı tutmaz. Script, kayıtları her gece kendi tablona kopyalayan bir arşiv işi (pg_cron) kurar — telefonun her gece açık olmasını bekleyemeyiz, bu iş veritabanında çalışmak zorunda.',
@@ -137,9 +144,15 @@ const tr = {
     'Tarayıcıda supabase.com/dashboard’da projeni aç. Sol kenar çubuğunda "</> SQL Editor" sekmesine tıkla.',
     'Sağ üstteki yeşil "+ New query" butonuna bas. Karşına boş, siyah bir kod kutusu açılacak.',
     'Aşağıdaki "Kopyala" butonuna dokun, sonra o boş kutuya dokunup yapıştır (basılı tut → Yapıştır, ya da Ctrl/Cmd+V).',
-    'Sağ alttaki (ya da sağ üstteki) yeşil "Run" butonuna bas — Ctrl/Cmd+Enter da çalışır. Altta "Success. No rows returned" gibi bir sonuç görmelisin, kırmızı hata değil.',
-    'Sol menüden Authentication → Users’a git, kendi hesabının satırına dokun ve "User UID" değerini kopyala.',
-    'Az önce yapıştırdığın script’in en altında ">>> EDIT ME" yazan bloğu bul. "insert into..." ile başlayıp "on conflict..." ile biten 3 satırın başındaki "-- " işaretlerini sil, "BURAYA-KENDI-USER-ID-NIZ" yazan yeri ID’n ile değiştir, SADECE o 3 satırı seçip tekrar Run’la.',
+    'Script’in en altındaki ">>> EDIT ME" bloğunda iki satırın başındaki "-- " işaretini sil ve admin@ornek.com yerine kendi e-postanı yaz.',
+    'Yeşil "Run" butonuna bas — Ctrl/Cmd+Enter da çalışır. Altta "Success" benzeri bir sonuç görmelisin, kırmızı hata değil.',
+  ],
+  // E-posta bilindiğinde (onboarding) script hazır gelir: düzenleme adımı yok.
+  sqlStepsEmbedded: [
+    'Tarayıcıda supabase.com/dashboard’da projeni aç. Sol kenar çubuğunda "</> SQL Editor" sekmesine tıkla.',
+    'Sağ üstteki yeşil "+ New query" butonuna bas; aşağıdaki "Kopyala" ile script’i boş kutuya yapıştır.',
+    'Yeşil "Run" butonuna bas (Ctrl/Cmd+Enter). Altta "Success" benzeri bir sonuç görmelisin — hepsi bu, script’te hiçbir şey düzenlemen gerekmez.',
+    'Admin yetkisi e-postana bağlandı; sıradaki ekranda bu e-posta ve şifrenle giriş yapıp doğrulayacağız.',
   ],
   sqlPasteLabel: '↓ BU SCRIPT’İ KOPYALA VE SQL EDITOR’DEKİ BOŞ KUTUYA YAPIŞTIR ↓',
   sqlCopy: 'Kopyala',
@@ -154,12 +167,11 @@ const tr = {
   whereFindBody:
     'Dashboard → projenin ayarları (⚙ Settings) → API Keys. "Project URL" ve "anon / public" anahtarını oradan kopyala. anon anahtar herkese açık olacak şekilde tasarlanmıştır; tek başına hiçbir veri açmaz. service_role / secret anahtarını ASLA girme — uygulama onu istemez ve reddeder.',
   fieldUrl: 'PROJE URL',
-  fieldUrlHelp: 'https://xxxx.supabase.co biçiminde',
+  fieldUrlHelp: 'Anon anahtarını yapıştırınca çoğu projede kendiliğinden dolar; dolmadıysa https://xxxx.supabase.co',
   fieldAnon: 'ANON ANAHTARI (PUBLIC)',
   fieldAnonHelp: 'API Keys sayfasındaki "anon public" — service_role DEĞİL',
   fieldEmail: 'ADMİN E-POSTA',
-  fieldEmailHelp:
-    'Yeni hesap değil — projendeki var olan bir Auth kullanıcısı; SQL adımında admin yaptığın kişi',
+  fieldEmailHelp: 'Kurulum SQL’inde admin yetkisi bağlanan e-posta',
   fieldPassword: 'ŞİFRE',
   fieldPasswordHelp: 'Bu hesabın Supabase şifresi; yalnızca giriş yapmak için kullanılır',
   connectCta: 'Bağlan ve doğrula',
@@ -361,7 +373,7 @@ const en: Strings = {
   errSecretKey:
     'This is a secret key. The app only works with the public (publishable/anon) key.',
   errNotAdmin:
-    'Signed in, but this account is not in analytics.admins. Run the ">>> EDIT ME" step at the bottom of the setup SQL with this account’s user ID, then try again.',
+    'Signed in, but this account is not recognized as an admin. Make sure the admin line at the bottom of the setup SQL contains THIS account’s email and that the email is confirmed (the user should show "Confirmed" under Authentication → Users), then try again.',
   errPermissionDenied:
     "The function exists but the API may not have picked up the grant yet — Supabase's schema cache can lag a few minutes behind new grants. Run this on its own in the SQL Editor to refresh it right away: notify pgrst, 'reload schema'; then try again. If it still fails, re-run the full setup SQL (including the \">>> EDIT ME\" block) from top to bottom.",
   errConnectGeneric: 'Could not connect.',
@@ -419,11 +431,17 @@ const en: Strings = {
   sourceDemo: 'Browse with demo data',
   sourceDemoDesc: 'Nothing required; the dashboard fills with deterministic fake data.',
 
+  adminEmailTitle: 'Your admin email',
+  adminEmailHint:
+    'You’ll open the panel with this account; the SQL script is generated READY for this address — nothing inside it needs editing.',
+  adminEmailFieldHelp:
+    'The email of an Auth user in your project. No account yet? Sign up in your app with this address and confirm the email — access is granted automatically.',
+
   sqlTitle: 'Database setup',
   sqlWhy: [
     'Supabase never exposes user data (the auth schema) through the API — the anon key cannot read auth.users. The only clean way to get the data you picked is secure functions (RPCs) defined inside the database. The script below sets up exactly those.',
     'Authorization also lives in the first line of every one of those functions: anyone not on the admin list — including someone who grabs your anon key — gets "forbidden". This check would be meaningless on the phone; the key is public by design.',
-    'The ">>> EDIT ME" line at the bottom of the script is what adds you to that admin list — with your own user ID. Without it, the database has no way to tell who’s asking and returns forbidden to everyone, including you. The email/password on the next screen exist for the same reason: the only way for the app to prove to the database "I am that admin" is to actually sign in as that account. No need to create a new one — use a user that already exists in your project.',
+    'The line at the end of the script binds admin access to the email you provided: the account signing in with that (confirmed) address can view the panel. That’s also why the password on the connect screen exists: the app proves "I am that admin" by performing a real Supabase Auth sign-in as you.',
   ],
   sqlWhyArchive:
     'Also, for activity/device data: Supabase does not keep sign-in logs permanently. The script sets up a nightly archive job (pg_cron) that copies them into your own table — we can’t expect your phone to be awake every night, so this must run in the database.',
@@ -434,9 +452,14 @@ const en: Strings = {
     'In a browser, open supabase.com/dashboard and go into your project. Click the "</> SQL Editor" tab in the left sidebar.',
     'Press the green "+ New query" button, top right. An empty black code box opens.',
     'Tap the "Copy" button below, then tap into that empty box and paste (press and hold → Paste, or Ctrl/Cmd+V).',
-    'Press the green "Run" button (bottom or top right) — Ctrl/Cmd+Enter also works. You should see something like "Success. No rows returned" below, not a red error.',
-    'Go to Authentication → Users in the left sidebar, tap your own account’s row, and copy its "User UID".',
-    'In the script you just pasted, find the ">>> EDIT ME" block at the very bottom. Remove the leading "-- " from the 3 lines starting with "insert into..." and ending with "on conflict...", replace "PASTE-YOUR-USER-ID-HERE" with your ID, select just those 3 lines, and press Run again.',
+    'In the ">>> EDIT ME" block at the bottom of the script, remove the leading "-- " from the two lines and put your own email in place of admin@ornek.com.',
+    'Press the green "Run" button — Ctrl/Cmd+Enter also works. You should see something like "Success" below, not a red error.',
+  ],
+  sqlStepsEmbedded: [
+    'In a browser, open supabase.com/dashboard and go into your project. Click the "</> SQL Editor" tab in the left sidebar.',
+    'Press the green "+ New query" button, then paste the script into the empty box using the "Copy" button below.',
+    'Press the green "Run" button (Ctrl/Cmd+Enter). You should see something like "Success" below — that’s it, nothing in the script needs editing.',
+    'Admin access is bound to your email; on the next screen you’ll sign in with that email and your password to verify.',
   ],
   sqlPasteLabel: '↓ COPY THIS SCRIPT AND PASTE IT INTO THE EMPTY SQL EDITOR BOX ↓',
   sqlCopy: 'Copy',
@@ -450,12 +473,11 @@ const en: Strings = {
   whereFindBody:
     'Dashboard → your project’s settings (⚙ Settings) → API Keys. Copy the "Project URL" and the "anon / public" key from there. The anon key is designed to be public; on its own it unlocks nothing. NEVER paste the service_role / secret key — the app doesn’t ask for it and will reject it.',
   fieldUrl: 'PROJECT URL',
-  fieldUrlHelp: 'Looks like https://xxxx.supabase.co',
+  fieldUrlHelp: 'Usually fills itself when you paste the anon key; otherwise https://xxxx.supabase.co',
   fieldAnon: 'ANON KEY (PUBLIC)',
   fieldAnonHelp: 'The "anon public" key on the API Keys page — NOT service_role',
   fieldEmail: 'ADMIN EMAIL',
-  fieldEmailHelp:
-    'Not a new account — an existing Auth user in your project; the one you made admin in the SQL step',
+  fieldEmailHelp: 'The email that the setup SQL binds admin access to',
   fieldPassword: 'PASSWORD',
   fieldPasswordHelp: 'That account’s Supabase password; used only to sign in',
   connectCta: 'Connect & verify',

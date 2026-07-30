@@ -44,8 +44,23 @@ create table if not exists analytics.admins (
   created_at timestamptz not null default now()
 );
 
+${c(
+  'E-posta tabanlı admin: user ID aramaya gerek kalmaz. Güvenlik şartı: e-posta',
+  'Email-based admins: no need to hunt for user IDs. Security requirement: the',
+)}
+${c(
+  'DOĞRULANMIŞ olmalı — açık kayıtlı projelerde başkasının adına hesap açan biri yetki alamaz.',
+  'email must be CONFIRMED — nobody gains access by merely registering someone else’s address.',
+)}
+create table if not exists analytics.admin_emails (
+  email      text primary key,
+  created_at timestamptz not null default now()
+);
+
 alter table analytics.admins enable row level security;
+alter table analytics.admin_emails enable row level security;
 revoke all on table analytics.admins from public, anon, authenticated;
+revoke all on table analytics.admin_emails from public, anon, authenticated;
 
 create or replace function analytics.is_admin()
 returns boolean
@@ -56,6 +71,13 @@ set search_path = ''
 as $$
   select exists (
     select 1 from analytics.admins a where a.user_id = auth.uid()
+  )
+  or exists (
+    select 1
+    from auth.users u
+    join analytics.admin_emails e on lower(u.email::text) = lower(e.email)
+    where u.id = auth.uid()
+      and u.email_confirmed_at is not null
   );
 $$;
 
@@ -1081,21 +1103,40 @@ const RELOAD_SCHEMA = () =>
   )}
 notify pgrst, 'reload schema';`;
 
-const FOOTER = () =>
-  `${c(
-  '>>> EDIT ME — admin ekleyin (bunsuz panel her istekte "forbidden" görür).',
-  '>>> EDIT ME — add your admin (without this the panel gets "forbidden" on every request).',
-)}
+// E-posta biliniyorsa (onboarding) footer hazır bir insert olur — düzenleme
+// gerektirmez. Bilinmiyorsa (Ayarlar'daki genel script) yer tutuculu sürüm.
+const FOOTER = (adminEmail?: string) => {
+  if (adminEmail) {
+    const safe = adminEmail.trim().toLowerCase().replace(/'/g, "''");
+    return `${c(
+      `Admin yetkisi: ${safe} — bu e-postayla (doğrulanmış) giriş yapan hesap paneli görebilir.`,
+      `Admin access: ${safe} — the (confirmed) account signing in with this email can view the panel.`,
+    )}
+insert into analytics.admin_emails (email)
+values ('${safe}')
+on conflict (email) do nothing;`;
+  }
+  return `${c(
+    'Admin ekleyin (bunsuz panel her istekte "forbidden" görür): aşağıdaki iki',
+    'Add your admin (without this the panel gets "forbidden" on every request): remove',
+  )}
 ${c(
-  'Authentication → Users’tan kendi user ID’nizi kopyalayın, "-- " işaretlerini kaldırıp çalıştırın:',
-  'Copy your user ID from Authentication → Users, remove the leading "-- " and run:',
-)}
+    'satırın başındaki "-- " işaretini silin, e-postanızı yazın ve çalıştırın.',
+    'the leading "-- " from the two lines below, put your email in, and run.',
+  )}
 --
+-- insert into analytics.admin_emails (email)
+-- values ('admin@ornek.com') on conflict (email) do nothing;
+--
+${c(
+    'Alternatif (user ID ile, e-posta doğrulaması gerekmez):',
+    'Alternative (by user ID; does not require a confirmed email):',
+  )}
 -- insert into analytics.admins (user_id, note)
--- values ('PASTE-YOUR-USER-ID-HERE', 'me')
--- on conflict (user_id) do nothing;`;
+-- values ('USER-ID', 'me') on conflict (user_id) do nothing;`;
+};
 
-export function buildSetupSql(metrics: MetricKey[]): string {
+export function buildSetupSql(metrics: MetricKey[], adminEmail?: string): string {
   const history = needsHistory(metrics);
   const parts = [HEADER(), CORE_SCHEMA()];
   if (history) parts.push(HISTORY_SCHEMA());
@@ -1116,6 +1157,6 @@ export function buildSetupSql(metrics: MetricKey[]): string {
   if (history) {
     parts.push(RPC_DAU_SERIES(), RPC_DEVICES(), RPC_USER_DETAIL(), RPC_ACTIVITY(), CRON());
   }
-  parts.push(RELOAD_SCHEMA(), FOOTER());
+  parts.push(FOOTER(adminEmail), RELOAD_SCHEMA());
   return parts.join('\n\n') + '\n';
 }

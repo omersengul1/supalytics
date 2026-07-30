@@ -30,8 +30,9 @@ iPhone/Android'de **Expo Go** ile QR'ı okutun (Mac gerekmez). Gerisini uygulama
 
 1. **Ne görmek istiyorsun?** Önce metriklerini seçersin (aktif kullanıcılar, kayıtlar, sağlayıcılar, cihazlar, oturumlar, işlem akışı).
 2. **Veri kaynağı:** "Demo verilerle gez" dersen hiçbir kurulum gerekmez. "Kendi projeme bağlan" dersen…
-3. **SQL adımı:** Uygulama, *seçtiğin metriklere göre daraltılmış* kurulum SQL'ini gerekçeleriyle birlikte gösterir — minik bir **Kopyala** butonuyla. Supabase **SQL Editor**'e yapıştırıp çalıştırırsın; en alttaki `>>> EDIT ME` bloğuyla kendi hesabını admin yaparsın (adımlar tek tek ekranda yazar).
-4. **API adımı:** Project URL + `anon (public)` anahtar + admin hesabının e-posta/şifresi. Bilgilerin Dashboard'da nerede olduğu ekranda anlatılır; `service_role`/secret anahtar yapıştırırsan uygulama **reddeder**. "Bağlan ve doğrula" hem girişi hem admin yetkisini gerçek bir RPC çağrısıyla test eder.
+3. **E-posta adımı:** Yönetici e-postanı yazarsın; kurulum SQL'i bu adrese göre **hazır** üretilir.
+4. **SQL adımı:** Uygulama, *seçtiğin metriklere göre daraltılmış* script'i gerekçeleriyle gösterir — **Kopyala** → SQL Editor'e yapıştır → **Run**. Hepsi bu: script'te hiçbir şey düzenlemezsin; admin yetkisi e-postana bağlanır (güvenlik şartı: o e-postayla giriş yapan hesabın e-postası **doğrulanmış** olmalı — başkasının adresini doğrulamadan kaydeden biri yetki alamaz).
+5. **API adımı:** `anon (public)` anahtarı yapıştırırsın (JWT anahtarlarda Proje URL'si kendiliğinden dolar) + e-posta (önceden dolu) + şifre. `service_role`/secret anahtar yapıştırırsan uygulama **reddeder**. "Bağlan ve doğrula" hem girişi hem admin yetkisini gerçek bir RPC çağrısıyla test eder.
 
 Aynı SQL rehberi sonradan **Ayarlar → "Kurulum SQL'i"** ekranından da açılır (metrik seçimini değiştirirsen güncel script'i oradan alıp tekrar çalıştırman yeterlidir; script tekrar çalıştırmaya dayanıklıdır).
 

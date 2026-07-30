@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Field, PrimaryButton } from '@/components/form';
 import { T } from '@/lib/i18n';
 import { usePrefs } from '@/lib/prefs-context';
+import { projectUrlFromKey } from '@/lib/supabase';
 import { colors, radius, type as t } from '@/lib/theme';
 
 // "Proje ekle" modalı: onboarding'deki bağlantı adımının bire bir karşılığı.
@@ -76,19 +77,26 @@ export default function AddProject() {
           maxLength={40}
         />
         <Field
+          label={T.fieldAnon}
+          help={T.fieldAnonHelp}
+          value={anonKey}
+          onChangeText={(v: string) => {
+            setAnonKey(v);
+            // JWT anahtarlar proje ref'ini taşır: URL'yi kendimiz doldururuz.
+            if (!url.trim()) {
+              const derived = projectUrlFromKey(v);
+              if (derived) setUrl(derived);
+            }
+          }}
+          placeholder="eyJhbGciOi… / sb_publishable_…"
+        />
+        <Field
           label={T.fieldUrl}
           help={T.fieldUrlHelp}
           value={url}
           onChangeText={setUrl}
           placeholder="https://xxxx.supabase.co"
           keyboardType="url"
-        />
-        <Field
-          label={T.fieldAnon}
-          help={T.fieldAnonHelp}
-          value={anonKey}
-          onChangeText={setAnonKey}
-          placeholder="eyJhbGciOi… / sb_publishable_…"
         />
         <Field
           label={T.fieldEmail}

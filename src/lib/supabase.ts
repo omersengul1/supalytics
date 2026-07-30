@@ -44,6 +44,23 @@ export function assertPublicKey(key: string): void {
   }
 }
 
+/** Eski tip (JWT) anon anahtarındaki "ref" iddiasından proje URL'sini türetir.
+ *  Yeni sb_publishable_ anahtarları ref taşımaz → null (URL elle girilir). */
+export function projectUrlFromKey(key: string): string | null {
+  const parts = key.trim().split('.');
+  if (parts.length !== 3) return null;
+  try {
+    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4);
+    const payload = JSON.parse(globalThis.atob(padded)) as { ref?: string };
+    return payload.ref && /^[a-z0-9]{15,}$/i.test(payload.ref)
+      ? `https://${payload.ref}.supabase.co`
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export function projectHost(url: string): string {
   try {
     return new URL(url).host;
