@@ -49,6 +49,7 @@ function Gate() {
           {/* Redirect yerine guard: '/' çakışması yaratmadan onboarding ⇄ tabs geçişi. */}
           <Stack.Protected guard={prefs.setupDone}>
             <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="add-project" options={{ presentation: 'modal' }} />
           </Stack.Protected>
           <Stack.Protected guard={!prefs.setupDone}>
             <Stack.Screen name="onboarding" />

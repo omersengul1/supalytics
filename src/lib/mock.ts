@@ -6,6 +6,7 @@ import type {
   DeviceSlice,
   ProviderSlice,
   SeriesPoint,
+  TopUser,
   Totals,
   UserEvent,
   UserRow,
@@ -68,13 +69,23 @@ export function mockTotals(): Totals {
   const dau = dau30[dau30.length - 1].users;
   const newToday = signup30[signup30.length - 1].users;
   const newWeek = signup30.slice(-7).reduce((sum, p) => sum + p.users, 0);
+  const newPrevWeek = signup30.slice(-14, -7).reduce((sum, p) => sum + p.users, 0);
+  const newMonth = signup30.reduce((sum, p) => sum + p.users, 0);
+  const total = 12483;
   return {
-    total_users: 12483,
+    total_users: total,
+    unconfirmed_users: Math.round(total * 0.054),
     new_today: newToday,
     new_week: newWeek,
+    new_month: newMonth,
+    new_prev_week: newPrevWeek,
     dau,
     wau: Math.round(dau * 2.9),
     mau: Math.round(dau * 6.4),
+    logins_today: Math.round(dau * 1.62),
+    open_sessions: Math.round(dau * 1.18),
+    online_now: Math.round(dau * 0.052) + 3,
+    mfa_users: Math.round(total * 0.112),
   };
 }
 
@@ -120,12 +131,16 @@ interface MockUser extends UserRow {
 
 let userCache: MockUser[] | null = null;
 
+function cap(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 function allUsers(): MockUser[] {
   if (userCache) return userCache;
   const rnd = mulberry32(BASE_SEED + 77);
   const now = anchorNow().getTime();
   const users: MockUser[] = [];
-  for (let i = 0; i < 57; i++) {
+  for (let i = 0; i < 124; i++) {
     const first = FIRST[Math.floor(rnd() * FIRST.length)];
     const last = LAST[Math.floor(rnd() * LAST.length)];
     const domain = DOMAINS[Math.floor(rnd() * DOMAINS.length)];
@@ -144,6 +159,9 @@ function allUsers(): MockUser[] {
     users.push({
       id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`,
       email,
+      // OAuth'la gelenlerde isim olur, e-postayla gelenlerde çoğu zaman olmaz.
+      name: rnd() < 0.62 ? `${cap(first)} ${cap(last)}` : null,
+      avatar_url: null, // demo modda ağ trafiği yok — baş harf avatarı çizilir
       providers: PROVIDER_SETS[Math.floor(rnd() * PROVIDER_SETS.length)],
       created_at: new Date(now - createdDaysAgo * 86400_000).toISOString(),
       last_sign_in_at: lastSignIn,
@@ -159,11 +177,32 @@ function allUsers(): MockUser[] {
   return users;
 }
 
-export function mockUsers(q: string): UserRow[] {
+export function mockUsers(q: string, offset = 0, limit = 50): UserRow[] {
   const query = q.trim().toLowerCase();
   return allUsers()
-    .filter((u) => !query || (u.email ?? '').includes(query))
+    .filter(
+      (u) =>
+        !query ||
+        (u.email ?? '').includes(query) ||
+        (u.name ?? '').toLowerCase().includes(query),
+    )
+    .slice(offset, offset + limit)
     .map(({ device: _device, ...row }) => row);
+}
+
+export function mockTopUsers(maxRows: number): TopUser[] {
+  const rnd = mulberry32(BASE_SEED + 303);
+  return allUsers()
+    .filter((u) => u.last_sign_in_at)
+    .slice(0, maxRows)
+    .map((u, i) => ({
+      user_id: u.id,
+      email: u.email,
+      name: u.name,
+      avatar_url: u.avatar_url,
+      events: Math.max(2, Math.round((maxRows - i) * 9 * (0.7 + rnd() * 0.6))),
+      last_seen: u.last_sign_in_at as string,
+    }));
 }
 
 const ACTIVITY_ACTIONS = [

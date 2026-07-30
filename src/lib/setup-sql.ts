@@ -1,7 +1,12 @@
 // Seçilen metriklere göre kurulum SQL'ini üretir.
 // İki blok var: ÇEKİRDEK (her gerçek kurulumda) ve GEÇMİŞ (aktiflik/cihaz/
 // oturum/akış metriklerinden biri seçiliyse: login_history + pg_cron arşivi).
-// Üretilen script tekrar çalıştırmaya dayanıklıdır (if not exists / or replace).
+// Üretilen script tekrar çalıştırmaya dayanıklıdır (if not exists / or replace;
+// dönüş tipi değişen fonksiyonlar önce drop edilir).
+//
+// v2: metrikler yalnızca arşivden değil, Supabase'in CANLI tablolarından da
+// beslenir (auth.audit_log_entries + auth.sessions). Böylece gece arşivi daha
+// hiç çalışmamışken bile "bugün aktif", cihazlar ve akış anında dolar.
 
 import { lang } from './i18n';
 import type { MetricKey } from './prefs';
@@ -52,6 +57,23 @@ as $$
   select exists (
     select 1 from analytics.admins a where a.user_id = auth.uid()
   );
+$$;
+
+create or replace function analytics.device_of(ua text)
+returns text
+language sql
+immutable
+set search_path = ''
+as $$
+  select case
+    when ua is null or ua = ''             then 'Unknown'
+    when ua ~* 'iphone|ipad|ipod|ios'      then 'iOS'
+    when ua ~* 'android'                   then 'Android'
+    when ua ~* 'mac os x|macintosh|darwin' then 'macOS'
+    when ua ~* 'windows'                   then 'Windows'
+    when ua ~* 'linux|x11'                 then 'Linux'
+    else 'Other'
+  end;
 $$;`;
 
 const HISTORY_SCHEMA = () =>
@@ -76,23 +98,6 @@ create index if not exists login_history_user_created_idx
 
 alter table analytics.login_history enable row level security;
 revoke all on table analytics.login_history from public, anon, authenticated;
-
-create or replace function analytics.device_of(ua text)
-returns text
-language sql
-immutable
-set search_path = ''
-as $$
-  select case
-    when ua is null or ua = ''             then 'Unknown'
-    when ua ~* 'iphone|ipad|ipod|ios'      then 'iOS'
-    when ua ~* 'android'                   then 'Android'
-    when ua ~* 'mac os x|macintosh|darwin' then 'macOS'
-    when ua ~* 'windows'                   then 'Windows'
-    when ua ~* 'linux|x11'                 then 'Linux'
-    else 'Other'
-  end;
-$$;
 
 create or replace function analytics.archive_auth_events()
 returns bigint
@@ -134,79 +139,144 @@ begin
 end;
 $$;`;
 
-// totals her iki kurulumda da aynı metin: login_history yoksa aktiflik
-// sütunları 0 döner (to_regclass koruması).
-const RPC_TOTALS = () =>
-  `create or replace function public.supalytics_totals()
+// Olay birleşimi: arşivlenmiş satırlar + arşive henüz girmemiş CANLI audit
+// kayıtları. Kesim noktası arşivdeki en yeni created_at — çifte sayım olmaz.
+// Bu sayede aktiflik metrikleri gece arşivini beklemez.
+const EVENTS_FN = (history: boolean) =>
+  history
+    ? `${c(
+        'Olay birleşimi: arşiv + canlı audit log (arşiv kesiminden sonrası) — metrikler geceyi beklemez.',
+        'Event union: archive + live audit log (rows past the archive cutoff) — metrics never wait for the nightly job.',
+      )}
+create or replace function analytics.events_since(since timestamptz)
 returns table (
-  total_users bigint,
-  new_today   bigint,
-  new_week    bigint,
-  dau         bigint,
-  wau         bigint,
-  mau         bigint
+  id         uuid,
+  user_id    uuid,
+  email      text,
+  action     text,
+  ip         text,
+  user_agent text,
+  created_at timestamptz
+)
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  with cutoff as (
+    select coalesce(max(h.created_at), 'epoch'::timestamptz) as ts
+    from analytics.login_history h
+  )
+  select h.id, h.user_id, h.email, h.action, h.ip, h.user_agent, h.created_at
+    from analytics.login_history h
+   where h.created_at >= since
+  union all
+  select e.id,
+         nullif(e.payload ->> 'actor_id', '')::uuid,
+         e.payload ->> 'actor_username',
+         coalesce(e.payload ->> 'action', 'unknown'),
+         nullif(e.ip_address, ''),
+         null::text,
+         e.created_at
+    from auth.audit_log_entries e
+    cross join cutoff c
+   where e.created_at > c.ts
+     and e.created_at >= since
+$$;`
+    : `${c(
+        'Olay kaynağı: canlı audit log (arşivsiz çekirdek kurulum).',
+        'Event source: the live audit log (core install, no archive).',
+      )}
+create or replace function analytics.events_since(since timestamptz)
+returns table (
+  id         uuid,
+  user_id    uuid,
+  email      text,
+  action     text,
+  ip         text,
+  user_agent text,
+  created_at timestamptz
+)
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select e.id,
+         nullif(e.payload ->> 'actor_id', '')::uuid,
+         e.payload ->> 'actor_username',
+         coalesce(e.payload ->> 'action', 'unknown'),
+         nullif(e.ip_address, ''),
+         null::text,
+         e.created_at
+    from auth.audit_log_entries e
+   where e.created_at >= since
+$$;`;
+
+// Dönüş tipi v1'den beri genişledi; create or replace tip değişikliğine izin
+// vermez — önce drop. Grant'lar hemen ardından yeniden verilir.
+const DROPS = () =>
+  `${c(
+    'Dönüş tipi değişen eski sürümler temizlenir (grant’lar aşağıda yeniden verilir).',
+    'Older versions with different return types are dropped (grants are re-issued below).',
+  )}
+drop function if exists public.supalytics_totals();
+drop function if exists public.supalytics_user_list(text, int, int);
+drop function if exists public.supalytics_top_users(int, int);`;
+
+const RPC_TOTALS = () =>
+  `create function public.supalytics_totals()
+returns table (
+  total_users       bigint,
+  unconfirmed_users bigint,
+  new_today         bigint,
+  new_week          bigint,
+  new_month         bigint,
+  new_prev_week     bigint,
+  dau               bigint,
+  wau               bigint,
+  mau               bigint,
+  logins_today      bigint,
+  open_sessions     bigint,
+  online_now        bigint,
+  mfa_users         bigint
 )
 language plpgsql
 stable
 security definer
 set search_path = ''
 as $$
-declare
-  has_history boolean := to_regclass('analytics.login_history') is not null;
 begin
   if not analytics.is_admin() then raise exception 'forbidden'; end if;
-  if has_history then
-    return query
-    select
-      (select count(*) from auth.users),
-      (select count(*) from auth.users u where u.created_at >= date_trunc('day', now())),
-      (select count(*) from auth.users u where u.created_at >= now() - interval '7 days'),
-      (select count(distinct h.user_id) from analytics.login_history h
-        where h.action in ('login', 'token_refreshed')
-          and h.created_at >= date_trunc('day', now())),
-      (select count(distinct h.user_id) from analytics.login_history h
-        where h.action in ('login', 'token_refreshed')
-          and h.created_at >= now() - interval '7 days'),
-      (select count(distinct h.user_id) from analytics.login_history h
-        where h.action in ('login', 'token_refreshed')
-          and h.created_at >= now() - interval '30 days');
-  else
-    return query
-    select
-      (select count(*) from auth.users),
-      (select count(*) from auth.users u where u.created_at >= date_trunc('day', now())),
-      (select count(*) from auth.users u where u.created_at >= now() - interval '7 days'),
-      0::bigint, 0::bigint, 0::bigint;
-  end if;
+  return query
+  select
+    (select count(*) from auth.users),
+    (select count(*) from auth.users u
+      where u.email_confirmed_at is null and u.phone_confirmed_at is null),
+    (select count(*) from auth.users u where u.created_at >= date_trunc('day', now())),
+    (select count(*) from auth.users u where u.created_at >= now() - interval '7 days'),
+    (select count(*) from auth.users u where u.created_at >= now() - interval '30 days'),
+    (select count(*) from auth.users u
+      where u.created_at >= now() - interval '14 days'
+        and u.created_at <  now() - interval '7 days'),
+    (select count(distinct ev.user_id) from analytics.events_since(date_trunc('day', now())) ev
+      where ev.action in ('login', 'token_refreshed')),
+    (select count(distinct ev.user_id) from analytics.events_since(now() - interval '7 days') ev
+      where ev.action in ('login', 'token_refreshed')),
+    (select count(distinct ev.user_id) from analytics.events_since(now() - interval '30 days') ev
+      where ev.action in ('login', 'token_refreshed')),
+    (select count(*) from analytics.events_since(date_trunc('day', now())) ev
+      where ev.action = 'login'),
+    (select count(*) from auth.sessions s
+      where s.not_after is null or s.not_after > now()),
+    (select count(*) from auth.sessions s
+      where coalesce(s.refreshed_at, s.updated_at, s.created_at) > now() - interval '15 minutes'),
+    (select count(distinct f.user_id) from auth.mfa_factors f where f.status = 'verified');
 end;
 $$;
 
 revoke all on function public.supalytics_totals() from public, anon;
 grant execute on function public.supalytics_totals() to authenticated;`;
-
-// Teşhis amaçlı: hangi rolle/kimlikle bağlandığını gösterir. Kasıtlı olarak
-// anon'a da açık — hassas veri döndürmez (yalnızca çağıranın kendi rolü/uid'i/
-// admin durumu), "permission denied" hatalarında uygulamanın gerçek durumu
-// göstermesini sağlar.
-const RPC_WHOAMI = () =>
-  `${c(
-    'Teşhis: bu bağlantının veritabanına hangi rolle/kimlikle ulaştığını gösterir.',
-    'Diagnostic: shows which role/identity this connection actually reaches the database as.',
-  )}
-create or replace function public.supalytics_whoami()
-returns table (jwt_role text, uid uuid, is_admin boolean)
-language plpgsql
-stable
-security definer
-set search_path = ''
-as $$
-begin
-  return query select auth.role(), auth.uid(), coalesce(analytics.is_admin(), false);
-end;
-$$;
-
-revoke all on function public.supalytics_whoami() from public;
-grant execute on function public.supalytics_whoami() to anon, authenticated;`;
 
 const RPC_SIGNUP_SERIES = () =>
   `create or replace function public.supalytics_signup_series(days int default 30)
@@ -260,7 +330,7 @@ revoke all on function public.supalytics_provider_breakdown() from public, anon;
 grant execute on function public.supalytics_provider_breakdown() to authenticated;`;
 
 const RPC_USER_LIST = () =>
-  `create or replace function public.supalytics_user_list(
+  `create function public.supalytics_user_list(
   q           text default '',
   page_size   int  default 50,
   page_offset int  default 0
@@ -268,6 +338,8 @@ const RPC_USER_LIST = () =>
 returns table (
   id              uuid,
   email           text,
+  name            text,
+  avatar_url      text,
   providers       text[],
   created_at      timestamptz,
   last_sign_in_at timestamptz
@@ -284,13 +356,23 @@ begin
     u.id,
     u.email::text,
     coalesce(
+      u.raw_user_meta_data ->> 'full_name',
+      u.raw_user_meta_data ->> 'name',
+      u.raw_user_meta_data ->> 'user_name',
+      u.raw_user_meta_data ->> 'preferred_username'
+    ),
+    coalesce(u.raw_user_meta_data ->> 'avatar_url', u.raw_user_meta_data ->> 'picture'),
+    coalesce(
       (select array_agg(distinct i.provider::text) from auth.identities i where i.user_id = u.id),
       '{}'::text[]
     ),
     u.created_at,
     u.last_sign_in_at
   from auth.users u
-  where q = '' or u.email ilike '%' || q || '%'
+  where q = ''
+     or u.email ilike '%' || q || '%'
+     or coalesce(u.raw_user_meta_data ->> 'full_name', u.raw_user_meta_data ->> 'name', '')
+        ilike '%' || q || '%'
   order by u.last_sign_in_at desc nulls last, u.created_at desc
   limit least(greatest(page_size, 1), 200)
   offset greatest(page_offset, 0);
@@ -299,6 +381,63 @@ $$;
 
 revoke all on function public.supalytics_user_list(text, int, int) from public, anon;
 grant execute on function public.supalytics_user_list(text, int, int) to authenticated;`;
+
+const RPC_TOP_USERS = () =>
+  `create function public.supalytics_top_users(days int default 30, max_rows int default 5)
+returns table (
+  user_id    uuid,
+  email      text,
+  name       text,
+  avatar_url text,
+  events     bigint,
+  last_seen  timestamptz
+)
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+begin
+  if not analytics.is_admin() then raise exception 'forbidden'; end if;
+  return query
+  select
+    u.id,
+    u.email::text,
+    coalesce(u.raw_user_meta_data ->> 'full_name', u.raw_user_meta_data ->> 'name'),
+    coalesce(u.raw_user_meta_data ->> 'avatar_url', u.raw_user_meta_data ->> 'picture'),
+    count(*)::bigint,
+    max(ev.created_at)
+  from analytics.events_since(now() - make_interval(days => least(greatest(days, 1), 365))) ev
+  join auth.users u on u.id = ev.user_id
+  where ev.action in ('login', 'token_refreshed')
+  group by u.id
+  order by count(*) desc, max(ev.created_at) desc
+  limit least(greatest(max_rows, 1), 50);
+end;
+$$;
+
+revoke all on function public.supalytics_top_users(int, int) from public, anon;
+grant execute on function public.supalytics_top_users(int, int) to authenticated;`;
+
+const RPC_WHOAMI = () =>
+  `${c(
+    'Teşhis: bu bağlantının veritabanına hangi rolle/kimlikle ulaştığını gösterir.',
+    'Diagnostic: shows which role/identity this connection actually reaches the database as.',
+  )}
+create or replace function public.supalytics_whoami()
+returns table (jwt_role text, uid uuid, is_admin boolean)
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+begin
+  return query select auth.role(), auth.uid(), coalesce(analytics.is_admin(), false);
+end;
+$$;
+
+revoke all on function public.supalytics_whoami() from public;
+grant execute on function public.supalytics_whoami() to anon, authenticated;`;
 
 const RPC_DAU_SERIES = () =>
   `create or replace function public.supalytics_dau_series(days int default 30)
@@ -313,16 +452,17 @@ begin
   return query
   select
     d.day::date,
-    coalesce(count(distinct h.user_id), 0)::bigint
+    coalesce(count(distinct ev.user_id), 0)::bigint
   from generate_series(
          current_date - (least(greatest(days, 1), 365) - 1),
          current_date,
          interval '1 day'
        ) as d(day)
-  left join analytics.login_history h
-    on h.created_at >= d.day
-   and h.created_at <  d.day + interval '1 day'
-   and h.action in ('login', 'token_refreshed')
+  left join analytics.events_since(
+         (current_date - (least(greatest(days, 1), 365) - 1))::timestamptz) ev
+    on ev.created_at >= d.day
+   and ev.created_at <  d.day + interval '1 day'
+   and ev.action in ('login', 'token_refreshed')
   group by d.day
   order by d.day;
 end;
@@ -332,7 +472,11 @@ revoke all on function public.supalytics_dau_series(int) from public, anon;
 grant execute on function public.supalytics_dau_series(int) to authenticated;`;
 
 const RPC_DEVICES = () =>
-  `create or replace function public.supalytics_device_breakdown(days int default 30)
+  `${c(
+    'Cihaz kırılımı: arşivdeki girişler + arşive henüz girmemiş canlı oturumlar.',
+    'Device breakdown: archived logins + live sessions not yet covered by the archive.',
+  )}
+create or replace function public.supalytics_device_breakdown(days int default 30)
 returns table (device text, sessions bigint)
 language plpgsql
 stable
@@ -342,10 +486,24 @@ as $$
 begin
   if not analytics.is_admin() then raise exception 'forbidden'; end if;
   return query
-  select analytics.device_of(h.user_agent), count(*)::bigint
-  from analytics.login_history h
-  where h.action = 'login'
-    and h.created_at >= now() - make_interval(days => least(greatest(days, 1), 365))
+  select analytics.device_of(x.ua), count(*)::bigint
+  from (
+    select h.user_agent as ua
+      from analytics.login_history h
+     where h.action = 'login'
+       and h.created_at >= now() - make_interval(days => least(greatest(days, 1), 365))
+    union all
+    select s.user_agent
+      from auth.sessions s
+     where s.created_at >= now() - make_interval(days => least(greatest(days, 1), 365))
+       and not exists (
+         select 1 from analytics.login_history h2
+          where h2.action = 'login'
+            and h2.user_id = s.user_id
+            and h2.created_at between s.created_at - interval '5 minutes'
+                                  and s.created_at + interval '5 minutes'
+       )
+  ) x
   group by 1
   order by 2 desc;
 end;
@@ -373,10 +531,10 @@ as $$
 begin
   if not analytics.is_admin() then raise exception 'forbidden'; end if;
   return query
-  select h.action, h.ip, analytics.device_of(h.user_agent), h.created_at
-  from analytics.login_history h
-  where h.user_id = uid
-  order by h.created_at desc
+  select ev.action, ev.ip, analytics.device_of(ev.user_agent), ev.created_at
+  from analytics.events_since(now() - interval '365 days') ev
+  where ev.user_id = uid
+  order by ev.created_at desc
   limit least(greatest(max_events, 1), 200);
 end;
 $$;
@@ -401,13 +559,13 @@ begin
   if not analytics.is_admin() then raise exception 'forbidden'; end if;
   return query
   select
-    coalesce(h.email, u.email::text),
-    h.action,
-    analytics.device_of(h.user_agent),
-    h.created_at
-  from analytics.login_history h
-  left join auth.users u on u.id = h.user_id
-  order by h.created_at desc
+    coalesce(ev.email, u.email::text),
+    ev.action,
+    analytics.device_of(ev.user_agent),
+    ev.created_at
+  from analytics.events_since(now() - interval '30 days') ev
+  left join auth.users u on u.id = ev.user_id
+  order by ev.created_at desc
   limit least(greatest(max_events, 1), 200);
 end;
 $$;
@@ -471,11 +629,14 @@ export function buildSetupSql(metrics: MetricKey[]): string {
   const parts = [HEADER(), CORE_SCHEMA()];
   if (history) parts.push(HISTORY_SCHEMA());
   parts.push(
+    EVENTS_FN(history),
     c('3) RPC’ler — uygulamanın çağırdığı tek yüzey', '3) RPCs — the only surface the app calls'),
+    DROPS(),
     RPC_TOTALS(),
     RPC_SIGNUP_SERIES(),
     RPC_PROVIDERS(),
     RPC_USER_LIST(),
+    RPC_TOP_USERS(),
     RPC_WHOAMI(),
   );
   if (history) {

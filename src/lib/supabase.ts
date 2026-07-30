@@ -1,10 +1,16 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 import { T } from './i18n';
-import { loadCredentials, SESSION_KEY, secureSessionStorage, type Credentials } from './prefs';
+import {
+  loadCredentials,
+  loadPrefs,
+  secureSessionStorage,
+  sessionKeyFor,
+  type Credentials,
+} from './prefs';
 
 let client: SupabaseClient | null = null;
-let clientCreds: Credentials | null = null;
+let clientSig: string | null = null;
 
 /** "https://xyz.supabase.co/" → doğrulanmış, sondaki / kırpılmış URL. */
 export function normalizeProjectUrl(input: string): string {
@@ -49,20 +55,19 @@ export function projectHost(url: string): string {
 // Aynı proje için tekrar tekrar yeni client açmak, aynı storage key'i
 // paylaşan yeni bir GoTrueClient örneği daha yaratır ("Multiple GoTrueClient
 // instances" uyarısı); Supabase bunun kimlik doğrulama durumunu bozabileceğini
-// (oturumun bazı çağrılara iliştirilmemesi dahil) açıkça belirtiyor. Aynı
-// bağlantıyla tekrar denerken var olan client'ı geri veriyoruz; yalnızca
-// bağlantı bilgisi değiştiğinde eskisinin auto-refresh döngüsünü durdurup
-// yenisini kuruyoruz.
-export function createClientFromCreds(creds: Credentials): SupabaseClient {
-  if (client && clientCreds?.url === creds.url && clientCreds?.anonKey === creds.anonKey) {
-    return client;
-  }
+// açıkça belirtiyor. Aynı projeyle tekrar çağrıda var olan client döner;
+// yalnızca proje/bağlantı değiştiğinde eskisinin auto-refresh döngüsü durdurulup
+// yenisi kurulur. Oturum, projeye özel storage key'de yaşar — projeler arası
+// geçişte her projenin oturumu kendi anahtarından geri yüklenir.
+export function createClientForProject(projectId: string, creds: Credentials): SupabaseClient {
+  const sig = `${projectId}|${creds.url}|${creds.anonKey}`;
+  if (client && clientSig === sig) return client;
   client?.auth.stopAutoRefresh().catch(() => {});
-  clientCreds = creds;
+  clientSig = sig;
   client = createClient(creds.url, creds.anonKey, {
     auth: {
       storage: secureSessionStorage,
-      storageKey: SESSION_KEY,
+      storageKey: sessionKeyFor(projectId),
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: false,
@@ -71,16 +76,18 @@ export function createClientFromCreds(creds: Credentials): SupabaseClient {
   return client;
 }
 
-/** Kayıtlı bağlantıyla tekil client; bağlantı yoksa Error. */
+/** Aktif projenin tekil client'ı; bağlantı yoksa Error. */
 export async function getClient(): Promise<SupabaseClient> {
   if (client) return client;
-  const creds = await loadCredentials();
+  const prefs = await loadPrefs();
+  if (!prefs.activeProjectId) throw new Error(T.errNoConnection);
+  const creds = await loadCredentials(prefs.activeProjectId);
   if (!creds) throw new Error(T.errNoConnection);
-  return createClientFromCreds(creds);
+  return createClientForProject(prefs.activeProjectId, creds);
 }
 
 export function resetClient(): void {
   client?.auth.stopAutoRefresh().catch(() => {});
   client = null;
-  clientCreds = null;
+  clientSig = null;
 }

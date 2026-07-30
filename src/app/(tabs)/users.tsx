@@ -11,7 +11,8 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { fetchUserDetail, fetchUsers } from '@/lib/api';
+import { Avatar } from '@/components/avatar';
+import { fetchUserDetail, fetchUsers, USERS_PAGE_SIZE } from '@/lib/api';
 import { actionLabel, deviceLabel, providerGlyph, timeAgo } from '@/lib/format';
 import { T } from '@/lib/i18n';
 import { usePrefs } from '@/lib/prefs-context';
@@ -29,20 +30,33 @@ export default function Users() {
   const [query, setQuery] = useState('');
   const [rows, setRows] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  // Son sayfa tam dolu geldiyse devamı olabilir; eksik geldiyse liste bitti.
+  const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<UserRow | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Yarış koruması: sorgu/proje değişince eski isteklerin sonucu düşer.
+  const requestSeq = useRef(0);
 
-  const load = useCallback(async (q: string) => {
-    try {
-      setRows(await fetchUsers(q));
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : T.errUsersFetch);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const load = useCallback(
+    async (q: string) => {
+      const seq = ++requestSeq.current;
+      try {
+        const page = await fetchUsers(q, 0);
+        if (seq !== requestSeq.current) return;
+        setRows(page);
+        setHasMore(page.length === USERS_PAGE_SIZE);
+        setError(null);
+      } catch (e) {
+        if (seq !== requestSeq.current) return;
+        setError(e instanceof Error ? e.message : T.errUsersFetch);
+      } finally {
+        if (seq === requestSeq.current) setLoading(false);
+      }
+    },
+    [prefs.demoMode, prefs.activeProjectId],
+  );
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -52,25 +66,43 @@ export default function Users() {
     };
   }, [query, load]);
 
+  const loadMore = useCallback(async () => {
+    if (loadingMore || loading || !hasMore) return;
+    const seq = requestSeq.current;
+    setLoadingMore(true);
+    try {
+      const page = await fetchUsers(query, rows.length);
+      if (seq !== requestSeq.current) return;
+      setRows((prev) => {
+        // Aynı sayfanın iki kez eklenmesine karşı id bazlı süzgeç.
+        const seen = new Set(prev.map((r) => r.id));
+        return [...prev, ...page.filter((r) => !seen.has(r.id))];
+      });
+      setHasMore(page.length === USERS_PAGE_SIZE);
+    } catch {
+      // sonraki sayfa alınamadıysa sessizce dur; çekmece tekrar denenebilir
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadingMore, loading, hasMore, query, rows.length]);
+
   const renderRow = ({ item }: { item: UserRow }) => {
     const activeToday =
       !!item.last_sign_in_at && Date.now() - new Date(item.last_sign_in_at).getTime() < DAY_MS;
-    const initial = (item.email ?? '?').charAt(0).toUpperCase();
     return (
       <Pressable onPress={() => setSelected(item)} style={styles.row}>
-        <View
-          style={[
-            styles.avatar,
-            activeToday && { borderColor: accentColor, borderWidth: 1.5 },
-          ]}
-        >
-          <Text style={[t.body, { fontWeight: '700', fontSize: 15 }]}>{initial}</Text>
-        </View>
+        <Avatar
+          url={item.avatar_url}
+          seed={item.name ?? item.email ?? '?'}
+          size={40}
+          ringColor={activeToday ? accentColor : undefined}
+        />
         <View style={{ flex: 1, gap: 2 }}>
           <Text style={[t.body, { fontSize: 15 }]} numberOfLines={1}>
-            {item.email ?? T.noEmail}
+            {item.name ?? item.email ?? T.noEmail}
           </Text>
           <Text style={t.caption} numberOfLines={1}>
+            {item.name && item.email ? `${item.email} · ` : ''}
             {T.lastSeen(timeAgo(item.last_sign_in_at))}
           </Text>
         </View>
@@ -106,6 +138,13 @@ export default function Users() {
           keyExtractor={(item) => item.id}
           renderItem={renderRow}
           contentContainerStyle={{ paddingBottom: insets.bottom + 110 }}
+          onEndReached={loadMore}
+          onEndReachedThreshold={0.4}
+          ListFooterComponent={
+            loadingMore ? (
+              <ActivityIndicator color={accentColor} style={{ marginVertical: 16 }} />
+            ) : null
+          }
           ListEmptyComponent={
             <Text style={[t.caption, styles.empty]}>
               {query.trim() ? T.emptySearch : T.emptyUsers}
@@ -152,10 +191,22 @@ function UserSheet({
       <Pressable style={styles.backdrop} onPress={onClose} />
       <View style={[styles.sheet, { paddingBottom: insets.bottom + 20 }]}>
         <View style={styles.grabber} />
-        <Text style={[t.body, { fontWeight: '700', fontSize: 17 }]} numberOfLines={1}>
-          {user?.email ?? T.noEmail}
-        </Text>
-        <Text style={[t.caption, { marginTop: 2 }]}>
+        <View style={styles.sheetHead}>
+          {user ? (
+            <Avatar url={user.avatar_url} seed={user.name ?? user.email ?? '?'} size={44} />
+          ) : null}
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={[t.body, { fontWeight: '700', fontSize: 17 }]} numberOfLines={1}>
+              {user?.name ?? user?.email ?? T.noEmail}
+            </Text>
+            {user?.name && user?.email ? (
+              <Text style={t.caption} numberOfLines={1}>
+                {user.email}
+              </Text>
+            ) : null}
+          </View>
+        </View>
+        <Text style={[t.caption, { marginTop: 8 }]}>
           {T.sheetJoined(user ? timeAgo(user.created_at) : '')} · {T.sheetProviders}:{' '}
           {user?.providers.join(', ') || '—'}
         </Text>
@@ -220,14 +271,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 11,
   },
-  avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.elevated,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   empty: {
     textAlign: 'center',
     marginTop: 48,
@@ -252,6 +295,11 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     backgroundColor: colors.elevated,
     marginBottom: 14,
+  },
+  sheetHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
   sheetDivider: {
     height: StyleSheet.hairlineWidth,

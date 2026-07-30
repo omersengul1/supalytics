@@ -1,6 +1,6 @@
 -- ============================================================================
--- supalytics · setup.sql
--- Supabase SQL Editor'de BİR KEZ çalıştırın.
+-- supalytics · setup.sql (v2)
+-- Supabase SQL Editor'de çalıştırın. Tekrar çalıştırmak güvenlidir.
 --
 -- GÜVENLİK MODELİ
 --   · Uygulama yalnızca herkese açık `anon` anahtar + sizin Supabase Auth
@@ -9,10 +9,16 @@
 --     satırda analytics.is_admin() kontrolü yapar. Admin olmayan herkes
 --     (anon dahil) "forbidden" alır.
 --   · `analytics` şemasına API'den erişim yoktur (usage verilmez, RLS açık);
---     dışarıya yalnızca public şemadaki supalytics_* fonksiyonları açılır ve
---     bunlar da sadece `authenticated` role'e grant edilir.
---   · Supabase'in auth.audit_log_entries tablosu kalıcı değildir; bu yüzden
---     gecelik pg_cron işi kayıtları analytics.login_history'ye arşivler.
+--     dışarıya yalnızca public şemadaki supalytics_* fonksiyonları açılır.
+--
+-- v2 YENİLİKLERİ
+--   · Metrikler yalnızca gece arşivinden değil, Supabase'in CANLI
+--     tablolarından da beslenir (auth.audit_log_entries + auth.sessions):
+--     "bugün aktif", cihazlar ve akış, arşiv hiç çalışmamışken bile dolar.
+--   · totals genişledi: çevrimiçi, açık oturum, bugünkü girişler, MFA,
+--     doğrulanmamış kullanıcı, haftalık büyüme karşılaştırması.
+--   · user_list artık isim + avatar (raw_user_meta_data) döner; en aktif
+--     kullanıcılar için supalytics_top_users eklendi.
 --
 -- KURULUMDAN SONRA
 --   1) En alttaki ">>> EDIT ME" bloğunu kendi user_id'nizle açın (admin'siz
@@ -134,56 +140,104 @@ begin
 end;
 $$;
 
+-- Olay birleşimi: arşivlenmiş satırlar + arşive henüz girmemiş CANLI audit
+-- kayıtları. Kesim noktası arşivdeki en yeni created_at — çifte sayım olmaz.
+-- Aktiflik metrikleri bu sayede gece arşivini beklemez.
+create or replace function analytics.events_since(since timestamptz)
+returns table (
+  id         uuid,
+  user_id    uuid,
+  email      text,
+  action     text,
+  ip         text,
+  user_agent text,
+  created_at timestamptz
+)
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  with cutoff as (
+    select coalesce(max(h.created_at), 'epoch'::timestamptz) as ts
+    from analytics.login_history h
+  )
+  select h.id, h.user_id, h.email, h.action, h.ip, h.user_agent, h.created_at
+    from analytics.login_history h
+   where h.created_at >= since
+  union all
+  select e.id,
+         nullif(e.payload ->> 'actor_id', '')::uuid,
+         e.payload ->> 'actor_username',
+         coalesce(e.payload ->> 'action', 'unknown'),
+         nullif(e.ip_address, ''),
+         null::text,
+         e.created_at
+    from auth.audit_log_entries e
+    cross join cutoff c
+   where e.created_at > c.ts
+     and e.created_at >= since
+$$;
+
 -- ----------------------------------------------------------------------------
 -- 3) RPC'ler (public şema — uygulamanın çağırdığı tek yüzey)
 --    Hepsi: security definer + boş search_path + ilk satırda admin kontrolü.
 --    "Aktif" tanımı: action in ('login','token_refreshed').
 -- ----------------------------------------------------------------------------
 
--- Not: uygulama, seçilen metriklere göre bu script'in daraltılmış bir halini de
--- üretebilir (arşivsiz "çekirdek" kurulum). totals bu yüzden login_history'nin
--- varlığını kontrol eder; tablo yoksa aktiflik sütunları 0 döner.
-create or replace function public.supalytics_totals()
+-- Dönüş tipi v1'den beri genişledi; create or replace tip değişikliğine izin
+-- vermez — önce drop. Grant'lar aşağıda yeniden verilir.
+drop function if exists public.supalytics_totals();
+drop function if exists public.supalytics_user_list(text, int, int);
+drop function if exists public.supalytics_top_users(int, int);
+
+create function public.supalytics_totals()
 returns table (
-  total_users bigint,
-  new_today   bigint,
-  new_week    bigint,
-  dau         bigint,
-  wau         bigint,
-  mau         bigint
+  total_users       bigint,
+  unconfirmed_users bigint,
+  new_today         bigint,
+  new_week          bigint,
+  new_month         bigint,
+  new_prev_week     bigint,
+  dau               bigint,
+  wau               bigint,
+  mau               bigint,
+  logins_today      bigint,
+  open_sessions     bigint,
+  online_now        bigint,
+  mfa_users         bigint
 )
 language plpgsql
 stable
 security definer
 set search_path = ''
 as $$
-declare
-  has_history boolean := to_regclass('analytics.login_history') is not null;
 begin
   if not analytics.is_admin() then raise exception 'forbidden'; end if;
-  if has_history then
-    return query
-    select
-      (select count(*) from auth.users),
-      (select count(*) from auth.users u where u.created_at >= date_trunc('day', now())),
-      (select count(*) from auth.users u where u.created_at >= now() - interval '7 days'),
-      (select count(distinct h.user_id) from analytics.login_history h
-        where h.action in ('login', 'token_refreshed')
-          and h.created_at >= date_trunc('day', now())),
-      (select count(distinct h.user_id) from analytics.login_history h
-        where h.action in ('login', 'token_refreshed')
-          and h.created_at >= now() - interval '7 days'),
-      (select count(distinct h.user_id) from analytics.login_history h
-        where h.action in ('login', 'token_refreshed')
-          and h.created_at >= now() - interval '30 days');
-  else
-    return query
-    select
-      (select count(*) from auth.users),
-      (select count(*) from auth.users u where u.created_at >= date_trunc('day', now())),
-      (select count(*) from auth.users u where u.created_at >= now() - interval '7 days'),
-      0::bigint, 0::bigint, 0::bigint;
-  end if;
+  return query
+  select
+    (select count(*) from auth.users),
+    (select count(*) from auth.users u
+      where u.email_confirmed_at is null and u.phone_confirmed_at is null),
+    (select count(*) from auth.users u where u.created_at >= date_trunc('day', now())),
+    (select count(*) from auth.users u where u.created_at >= now() - interval '7 days'),
+    (select count(*) from auth.users u where u.created_at >= now() - interval '30 days'),
+    (select count(*) from auth.users u
+      where u.created_at >= now() - interval '14 days'
+        and u.created_at <  now() - interval '7 days'),
+    (select count(distinct ev.user_id) from analytics.events_since(date_trunc('day', now())) ev
+      where ev.action in ('login', 'token_refreshed')),
+    (select count(distinct ev.user_id) from analytics.events_since(now() - interval '7 days') ev
+      where ev.action in ('login', 'token_refreshed')),
+    (select count(distinct ev.user_id) from analytics.events_since(now() - interval '30 days') ev
+      where ev.action in ('login', 'token_refreshed')),
+    (select count(*) from analytics.events_since(date_trunc('day', now())) ev
+      where ev.action = 'login'),
+    (select count(*) from auth.sessions s
+      where s.not_after is null or s.not_after > now()),
+    (select count(*) from auth.sessions s
+      where coalesce(s.refreshed_at, s.updated_at, s.created_at) > now() - interval '15 minutes'),
+    (select count(distinct f.user_id) from auth.mfa_factors f where f.status = 'verified');
 end;
 $$;
 
@@ -199,16 +253,17 @@ begin
   return query
   select
     d.day::date,
-    coalesce(count(distinct h.user_id), 0)::bigint
+    coalesce(count(distinct ev.user_id), 0)::bigint
   from generate_series(
          current_date - (least(greatest(days, 1), 365) - 1),
          current_date,
          interval '1 day'
        ) as d(day)
-  left join analytics.login_history h
-    on h.created_at >= d.day
-   and h.created_at <  d.day + interval '1 day'
-   and h.action in ('login', 'token_refreshed')
+  left join analytics.events_since(
+         (current_date - (least(greatest(days, 1), 365) - 1))::timestamptz) ev
+    on ev.created_at >= d.day
+   and ev.created_at <  d.day + interval '1 day'
+   and ev.action in ('login', 'token_refreshed')
   group by d.day
   order by d.day;
 end;
@@ -240,22 +295,6 @@ begin
 end;
 $$;
 
--- Teşhis amaçlı: bu bağlantının veritabanına hangi rolle/kimlikle ulaştığını
--- gösterir. Kasıtlı olarak anon'a da açık — hassas veri döndürmez (yalnızca
--- çağıranın kendi rolü/uid'i/admin durumu); "permission denied" hatalarında
--- gerçek durumu görmek için kullanılır.
-create or replace function public.supalytics_whoami()
-returns table (jwt_role text, uid uuid, is_admin boolean)
-language plpgsql
-stable
-security definer
-set search_path = ''
-as $$
-begin
-  return query select auth.role(), auth.uid(), coalesce(analytics.is_admin(), false);
-end;
-$$;
-
 create or replace function public.supalytics_provider_breakdown()
 returns table (provider text, users bigint)
 language plpgsql
@@ -273,6 +312,23 @@ begin
 end;
 $$;
 
+-- Teşhis amaçlı: bu bağlantının veritabanına hangi rolle/kimlikle ulaştığını
+-- gösterir. Kasıtlı olarak anon'a da açık — hassas veri döndürmez (yalnızca
+-- çağıranın kendi rolü/uid'i/admin durumu); "permission denied" hatalarında
+-- gerçek durumu görmek için kullanılır.
+create or replace function public.supalytics_whoami()
+returns table (jwt_role text, uid uuid, is_admin boolean)
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+begin
+  return query select auth.role(), auth.uid(), coalesce(analytics.is_admin(), false);
+end;
+$$;
+
+-- Cihaz kırılımı: arşivdeki girişler + arşive henüz girmemiş canlı oturumlar.
 create or replace function public.supalytics_device_breakdown(days int default 30)
 returns table (device text, sessions bigint)
 language plpgsql
@@ -283,16 +339,30 @@ as $$
 begin
   if not analytics.is_admin() then raise exception 'forbidden'; end if;
   return query
-  select analytics.device_of(h.user_agent), count(*)::bigint
-  from analytics.login_history h
-  where h.action = 'login'
-    and h.created_at >= now() - make_interval(days => least(greatest(days, 1), 365))
+  select analytics.device_of(x.ua), count(*)::bigint
+  from (
+    select h.user_agent as ua
+      from analytics.login_history h
+     where h.action = 'login'
+       and h.created_at >= now() - make_interval(days => least(greatest(days, 1), 365))
+    union all
+    select s.user_agent
+      from auth.sessions s
+     where s.created_at >= now() - make_interval(days => least(greatest(days, 1), 365))
+       and not exists (
+         select 1 from analytics.login_history h2
+          where h2.action = 'login'
+            and h2.user_id = s.user_id
+            and h2.created_at between s.created_at - interval '5 minutes'
+                                  and s.created_at + interval '5 minutes'
+       )
+  ) x
   group by 1
   order by 2 desc;
 end;
 $$;
 
-create or replace function public.supalytics_user_list(
+create function public.supalytics_user_list(
   q           text default '',
   page_size   int  default 50,
   page_offset int  default 0
@@ -300,6 +370,8 @@ create or replace function public.supalytics_user_list(
 returns table (
   id              uuid,
   email           text,
+  name            text,
+  avatar_url      text,
   providers       text[],
   created_at      timestamptz,
   last_sign_in_at timestamptz
@@ -316,16 +388,59 @@ begin
     u.id,
     u.email::text,
     coalesce(
+      u.raw_user_meta_data ->> 'full_name',
+      u.raw_user_meta_data ->> 'name',
+      u.raw_user_meta_data ->> 'user_name',
+      u.raw_user_meta_data ->> 'preferred_username'
+    ),
+    coalesce(u.raw_user_meta_data ->> 'avatar_url', u.raw_user_meta_data ->> 'picture'),
+    coalesce(
       (select array_agg(distinct i.provider::text) from auth.identities i where i.user_id = u.id),
       '{}'::text[]
     ),
     u.created_at,
     u.last_sign_in_at
   from auth.users u
-  where q = '' or u.email ilike '%' || q || '%'
+  where q = ''
+     or u.email ilike '%' || q || '%'
+     or coalesce(u.raw_user_meta_data ->> 'full_name', u.raw_user_meta_data ->> 'name', '')
+        ilike '%' || q || '%'
   order by u.last_sign_in_at desc nulls last, u.created_at desc
   limit least(greatest(page_size, 1), 200)
   offset greatest(page_offset, 0);
+end;
+$$;
+
+create function public.supalytics_top_users(days int default 30, max_rows int default 5)
+returns table (
+  user_id    uuid,
+  email      text,
+  name       text,
+  avatar_url text,
+  events     bigint,
+  last_seen  timestamptz
+)
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+begin
+  if not analytics.is_admin() then raise exception 'forbidden'; end if;
+  return query
+  select
+    u.id,
+    u.email::text,
+    coalesce(u.raw_user_meta_data ->> 'full_name', u.raw_user_meta_data ->> 'name'),
+    coalesce(u.raw_user_meta_data ->> 'avatar_url', u.raw_user_meta_data ->> 'picture'),
+    count(*)::bigint,
+    max(ev.created_at)
+  from analytics.events_since(now() - make_interval(days => least(greatest(days, 1), 365))) ev
+  join auth.users u on u.id = ev.user_id
+  where ev.action in ('login', 'token_refreshed')
+  group by u.id
+  order by count(*) desc, max(ev.created_at) desc
+  limit least(greatest(max_rows, 1), 50);
 end;
 $$;
 
@@ -347,10 +462,10 @@ as $$
 begin
   if not analytics.is_admin() then raise exception 'forbidden'; end if;
   return query
-  select h.action, h.ip, analytics.device_of(h.user_agent), h.created_at
-  from analytics.login_history h
-  where h.user_id = uid
-  order by h.created_at desc
+  select ev.action, ev.ip, analytics.device_of(ev.user_agent), ev.created_at
+  from analytics.events_since(now() - interval '365 days') ev
+  where ev.user_id = uid
+  order by ev.created_at desc
   limit least(greatest(max_events, 1), 200);
 end;
 $$;
@@ -371,13 +486,13 @@ begin
   if not analytics.is_admin() then raise exception 'forbidden'; end if;
   return query
   select
-    coalesce(h.email, u.email::text),
-    h.action,
-    analytics.device_of(h.user_agent),
-    h.created_at
-  from analytics.login_history h
-  left join auth.users u on u.id = h.user_id
-  order by h.created_at desc
+    coalesce(ev.email, u.email::text),
+    ev.action,
+    analytics.device_of(ev.user_agent),
+    ev.created_at
+  from analytics.events_since(now() - interval '30 days') ev
+  left join auth.users u on u.id = ev.user_id
+  order by ev.created_at desc
   limit least(greatest(max_events, 1), 200);
 end;
 $$;
@@ -394,6 +509,7 @@ revoke all on function public.supalytics_signup_series(int)           from publi
 revoke all on function public.supalytics_provider_breakdown()         from public, anon;
 revoke all on function public.supalytics_device_breakdown(int)        from public, anon;
 revoke all on function public.supalytics_user_list(text, int, int)    from public, anon;
+revoke all on function public.supalytics_top_users(int, int)          from public, anon;
 revoke all on function public.supalytics_user_detail(uuid, int)       from public, anon;
 revoke all on function public.supalytics_recent_activity(int)         from public, anon;
 revoke all on function public.supalytics_whoami()                     from public;
@@ -404,9 +520,10 @@ grant execute on function public.supalytics_signup_series(int)        to authent
 grant execute on function public.supalytics_provider_breakdown()      to authenticated;
 grant execute on function public.supalytics_device_breakdown(int)     to authenticated;
 grant execute on function public.supalytics_user_list(text, int, int) to authenticated;
-grant execute on function public.supalytics_whoami()                  to anon, authenticated;
+grant execute on function public.supalytics_top_users(int, int)       to authenticated;
 grant execute on function public.supalytics_user_detail(uuid, int)    to authenticated;
 grant execute on function public.supalytics_recent_activity(int)      to authenticated;
+grant execute on function public.supalytics_whoami()                  to anon, authenticated;
 
 -- ----------------------------------------------------------------------------
 -- 5) Gecelik arşiv (pg_cron) + ilk backfill

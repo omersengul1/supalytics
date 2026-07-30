@@ -3,15 +3,22 @@ import * as SecureStore from 'expo-secure-store';
 import type { AccentKey } from './theme';
 
 const PREFS_KEY = 'supalytics.prefs';
-const CREDS_KEY = 'supalytics.creds';
-// supabase-js oturumu bu sabit anahtar altında tutulur ki wipe tek hamlede silebilsin.
-export const SESSION_KEY = 'supalytics.session';
+const LEGACY_CREDS_KEY = 'supalytics.creds';
+const LEGACY_SESSION_KEY = 'supalytics.session';
 
 // Tüm depolama SecureStore'da: her erişim try/catch içinde, sessiz fallback.
-// SecureStore bozuksa (ör. eski Expo Go) tercihler bellekte yaşar ve oturum kapanışında silinir,
-// ama uygulama çökmez — demo modu her durumda çalışır.
+// SecureStore bozuksa (ör. eski Expo Go) tercihler bellekte yaşar ve oturum
+// kapanışında silinir, ama uygulama çökmez — demo modu her durumda çalışır.
+//
+// Çoklu proje: her projenin bağlantı bilgisi ve supabase-js oturumu kendi
+// anahtarı altında durur; prefs yalnızca sır İÇERMEYEN referans listesini tutar.
 
 export type MetricKey = 'active' | 'signups' | 'providers' | 'devices' | 'sessions' | 'activity';
+
+export interface ProjectRef {
+  id: string;
+  label: string; // proje host'u (xxxx.supabase.co) — sır değil
+}
 
 export interface Prefs {
   setupDone: boolean;
@@ -19,6 +26,8 @@ export interface Prefs {
   metrics: MetricKey[];
   accent: AccentKey;
   biometricLock: boolean;
+  projects: ProjectRef[];
+  activeProjectId: string | null;
 }
 
 export const defaultPrefs: Prefs = {
@@ -27,6 +36,8 @@ export const defaultPrefs: Prefs = {
   metrics: ['active', 'signups', 'providers', 'devices', 'sessions', 'activity'],
   accent: 'supabase',
   biometricLock: false,
+  projects: [],
+  activeProjectId: null,
 };
 
 export interface Credentials {
@@ -34,14 +45,57 @@ export interface Credentials {
   anonKey: string;
 }
 
+export function credsKeyFor(projectId: string): string {
+  return `supalytics.creds.${projectId}`;
+}
+
+export function sessionKeyFor(projectId: string): string {
+  return `supalytics.session.${projectId}`;
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
+
 export async function loadPrefs(): Promise<Prefs> {
+  let prefs: Prefs | null = null;
   try {
     const raw = await SecureStore.getItemAsync(PREFS_KEY);
-    if (raw) return { ...defaultPrefs, ...(JSON.parse(raw) as Partial<Prefs>) };
+    if (raw) prefs = { ...defaultPrefs, ...(JSON.parse(raw) as Partial<Prefs>) };
   } catch {
     // SecureStore bozuksa (ör. Expo Go eski versiyonu) varsayılanları kullan
   }
-  return defaultPrefs;
+  const merged = prefs ?? defaultPrefs;
+
+  // Tek-proje sürümünden geçiş: eski sabit anahtarlardaki bağlantı + oturum,
+  // "p1" kimlikli ilk projeye taşınır (bir kez).
+  if (merged.projects.length === 0) {
+    try {
+      const legacy = await SecureStore.getItemAsync(LEGACY_CREDS_KEY);
+      if (legacy) {
+        const creds = JSON.parse(legacy) as Credentials;
+        const migrated: Prefs = {
+          ...merged,
+          projects: [{ id: 'p1', label: hostOf(creds.url) }],
+          activeProjectId: 'p1',
+        };
+        await SecureStore.setItemAsync(credsKeyFor('p1'), legacy);
+        const session = await SecureStore.getItemAsync(LEGACY_SESSION_KEY);
+        if (session) await SecureStore.setItemAsync(sessionKeyFor('p1'), session);
+        SecureStore.deleteItemAsync(LEGACY_CREDS_KEY).catch(() => {});
+        SecureStore.deleteItemAsync(LEGACY_SESSION_KEY).catch(() => {});
+        SecureStore.setItemAsync(PREFS_KEY, JSON.stringify(migrated)).catch(() => {});
+        return migrated;
+      }
+    } catch {
+      // taşınamadıysa mevcut haliyle devam
+    }
+  }
+  return merged;
 }
 
 export async function savePrefs(patch: Partial<Prefs>): Promise<Prefs> {
@@ -54,9 +108,9 @@ export async function savePrefs(patch: Partial<Prefs>): Promise<Prefs> {
   return next;
 }
 
-export async function loadCredentials(): Promise<Credentials | null> {
+export async function loadCredentials(projectId: string): Promise<Credentials | null> {
   try {
-    const raw = await SecureStore.getItemAsync(CREDS_KEY);
+    const raw = await SecureStore.getItemAsync(credsKeyFor(projectId));
     return raw ? (JSON.parse(raw) as Credentials) : null;
   } catch {
     return null;
@@ -64,16 +118,26 @@ export async function loadCredentials(): Promise<Credentials | null> {
 }
 
 /** Sır yazımı: SecureStore bozuksa Error fırlatır — çağıran kullanıcıya anlatır. */
-export async function saveCredentials(creds: Credentials): Promise<void> {
-  await SecureStore.setItemAsync(CREDS_KEY, JSON.stringify(creds));
+export async function saveCredentials(projectId: string, creds: Credentials): Promise<void> {
+  await SecureStore.setItemAsync(credsKeyFor(projectId), JSON.stringify(creds));
+}
+
+/** Bir projenin tüm sırlarını (bağlantı + oturum) siler. */
+export async function deleteProjectSecrets(projectId: string): Promise<void> {
+  await Promise.all([
+    SecureStore.deleteItemAsync(credsKeyFor(projectId)).catch(() => {}),
+    SecureStore.deleteItemAsync(sessionKeyFor(projectId)).catch(() => {}),
+  ]);
 }
 
 export async function wipeEverything(): Promise<void> {
+  const prefs = await loadPrefs();
   await Promise.all([
-    PREFS_KEY,
-    CREDS_KEY,
-    SESSION_KEY,
-  ].map((key) => SecureStore.deleteItemAsync(key).catch(() => {})));
+    SecureStore.deleteItemAsync(PREFS_KEY).catch(() => {}),
+    SecureStore.deleteItemAsync(LEGACY_CREDS_KEY).catch(() => {}),
+    SecureStore.deleteItemAsync(LEGACY_SESSION_KEY).catch(() => {}),
+    ...prefs.projects.map((p) => deleteProjectSecrets(p.id)),
+  ]);
 }
 
 // supabase-js storage adapter'ı — oturum yalnızca Keychain/Keystore'da yaşar.

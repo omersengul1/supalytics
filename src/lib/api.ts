@@ -7,21 +7,26 @@ import {
   mockDevices,
   mockProviders,
   mockSignupSeries,
+  mockTopUsers,
   mockTotals,
   mockUserDetail,
   mockUsers,
 } from './mock';
 import { T } from './i18n';
 import { getClient } from './supabase';
-import type {
-  ActivityRow,
-  DeviceSlice,
-  ProviderSlice,
-  SeriesPoint,
-  Totals,
-  UserEvent,
-  UserRow,
+import {
+  zeroTotals,
+  type ActivityRow,
+  type DeviceSlice,
+  type ProviderSlice,
+  type SeriesPoint,
+  type TopUser,
+  type Totals,
+  type UserEvent,
+  type UserRow,
 } from './types';
+
+export const USERS_PAGE_SIZE = 50;
 
 let demoMode = true;
 
@@ -75,19 +80,22 @@ async function whoami(): Promise<WhoAmI | null> {
  *  demoMode bayrağından bağımsız çalışır. */
 export async function probeAdminAccess(): Promise<void> {
   try {
-    await rpc<Totals[]>('supalytics_totals');
+    await rpc<Partial<Totals>[]>('supalytics_totals');
   } catch (e) {
     const message = e instanceof Error ? e.message : T.errConnectGeneric;
     const who = await whoami();
-    throw new Error(who ? `${message}\n\n${T.whoamiDebug(who.jwt_role, who.uid, who.is_admin)}` : message);
+    throw new Error(
+      who ? `${message}\n\n${T.whoamiDebug(who.jwt_role, who.uid, who.is_admin)}` : message,
+    );
   }
 }
 
 export async function fetchTotals(): Promise<Totals> {
   if (demoMode) return demo(mockTotals());
-  const rows = await rpc<Totals[]>('supalytics_totals');
+  const rows = await rpc<Partial<Totals>[]>('supalytics_totals');
   if (!rows?.length) throw new Error(T.errEmptyTotals);
-  return rows[0];
+  // Eski SQL kurulumları yeni kolonları döndürmeyebilir; eksikler 0'lanır.
+  return { ...zeroTotals, ...rows[0] };
 }
 
 export function fetchDauSeries(days: number): Promise<SeriesPoint[]> {
@@ -110,9 +118,18 @@ export function fetchDevices(days: number): Promise<DeviceSlice[]> {
   return rpc<DeviceSlice[]>('supalytics_device_breakdown', { days });
 }
 
-export function fetchUsers(q: string): Promise<UserRow[]> {
-  if (demoMode) return demo(mockUsers(q));
-  return rpc<UserRow[]>('supalytics_user_list', { q, page_size: 50, page_offset: 0 });
+export function fetchUsers(q: string, offset = 0): Promise<UserRow[]> {
+  if (demoMode) return demo(mockUsers(q, offset, USERS_PAGE_SIZE));
+  return rpc<UserRow[]>('supalytics_user_list', {
+    q,
+    page_size: USERS_PAGE_SIZE,
+    page_offset: offset,
+  });
+}
+
+export function fetchTopUsers(days = 30, maxRows = 5): Promise<TopUser[]> {
+  if (demoMode) return demo(mockTopUsers(maxRows));
+  return rpc<TopUser[]>('supalytics_top_users', { days, max_rows: maxRows });
 }
 
 export function fetchActivity(maxEvents = 50): Promise<ActivityRow[]> {

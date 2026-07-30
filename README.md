@@ -1,6 +1,6 @@
 # supalytics
 
-Supabase projeleriniz için **cihaz-üstü kullanıcı analitiği**. Kaç kişi girmiş, kimler girmiş, en son ne zaman girmiş, günlük/haftalık aktif kullanıcı, hangi sağlayıcıdan ve hangi platformdan — hepsi telefonunuzda, şık ve karanlık bir panelde.
+Supabase projeleriniz için **cihaz-üstü kullanıcı analitiği**. Kaç kişi girmiş, kimler girmiş, şu an kaç kişi çevrimiçi, günlük/haftalık aktif, kayıt büyümesi, MFA kullanımı, hangi sağlayıcıdan ve hangi platformdan — hepsi telefonunuzda, şık ve karanlık bir panelde. **Birden fazla Supabase projesi** bağlanabilir; üstteki seçiciden tek dokunuşla aralarında geçilir.
 
 Sunucu yok. Telemetri yok. `service_role` yok. Arayüz telefon diline göre otomatik **Türkçe / İngilizce**.
 
@@ -9,11 +9,15 @@ Sunucu yok. Telemetri yok. `service_role` yok. Arayüz telefon diline göre otom
 - **Tanrı anahtarı asla.** Uygulama yalnızca herkese açık `anon` anahtar + sizin kendi Supabase Auth hesabınızla çalışır. `service_role` hiçbir ekranda istenmez, hiçbir yerde saklanmaz.
 - **Yetki veritabanında.** Tüm veri `security definer` RPC'lerden gelir; her RPC ilk satırda `analytics.is_admin()` kontrolü yapar. `analytics.admins` tablosunda olmayan herkes — anon anahtarı ele geçirenler dahil — `forbidden` alır. İstemciye güvenilmez.
 - **Sırlar Keychain'de.** Bağlantı bilgileri ve oturum yalnızca iOS Keychain / Android Keystore'da (`expo-secure-store`) durur; sırlar asla düz dosyaya/AsyncStorage'a yazılmaz, loglanmaz. (Sır içermeyen arayüz tercihleri — tema, metrik seçimi — AsyncStorage'dadır. Güvenli depolama çalışmayan bir istemcide uygulama sırları kaydetmeyi reddeder ve bunu açıkça söyler.)
-- **Tek ağ trafiği:** kendi Supabase projeniz. Başka hiçbir domain'e istek atılmaz.
+- **Tek ağ trafiği:** kendi Supabase projeleriniz — artı, kullanıcılarınızın profil fotoğrafları görüntülenirken fotoğrafın barındığı adres (ör. Google/GitHub avatar sunucusu). Bunun dışında hiçbir domain'e istek atılmaz; demo modu tamamen çevrimdışıdır.
 
 ### Neden service_role yok?
 
 `service_role` anahtarı RLS'i baypas eder, veritabanınızdaki her şeyi okuyup yazabilir. Bir mobil cihazda durmaması gerekir — çalınan telefon veya sızan yedek, bütün veritabanınız demektir. supalytics bunun yerine yetkiyi veritabanının içine koyar: herkese açık `anon` anahtar tek başına hiçbir şey açmaz; veri ancak `analytics.admins` listesindeki bir hesabın oturumuyla akar.
+
+### Neden "Supabase hesabınla giriş yap" yok?
+
+Supabase'in yönetim API'sine OAuth ile bağlanmak teknik olarak mümkün; ama o token **tüm organizasyonlarınızdaki tüm projelere** (service_role anahtarlarını çekmek dahil) yönetim erişimi verir — telefonda durmaması gereken ikinci bir tanrı anahtarıdır ve ayrıca kendi OAuth uygulamanızı kaydetmenizi gerektirir. supalytics bunun yerine proje başına `anon` anahtar + admin oturumu ister ve çoklu projeyi uygulama içindeki seçiciyle çözer: aynı düşük yetkili model, daha az kurulum.
 
 ## Kurulum
 
@@ -36,15 +40,18 @@ Depodaki [`supabase/setup.sql`](supabase/setup.sql), tüm metrikleri kapsayan ta
 - `analytics` şemasını (admin listesi + giriş arşivi) kurar,
 - `supalytics_*` RPC'lerini tanımlar (`revoke`/`grant` kapanışıyla),
 - Supabase'in kalıcı olmayan `auth.audit_log_entries` logunu her gece `analytics.login_history`'ye arşivleyen `pg_cron` işini kurar ve ilk backfill'i yapar. Aktiflik/cihaz/akış metrikleri seçilmediyse uygulamanın ürettiği "çekirdek" script bu arşiv katmanını hiç kurmaz.
+- **v2:** metrikler yalnızca arşivden değil, Supabase'in **canlı** tablolarından da beslenir (`auth.audit_log_entries` + `auth.sessions`): "bugün aktif", cihazlar ve akış, gece arşivi daha hiç çalışmamışken bile dolar. Kullanıcı listesi isim + profil fotoğrafı (`raw_user_meta_data`) döner; "en aktif kullanıcılar" ve genişletilmiş `totals` (çevrimiçi, açık oturum, bugünkü girişler, MFA, doğrulanmamış, haftalık büyüme) eklendi.
+
+> **v1'den yükseltme:** güncel script'i (uygulamada Ayarlar → "Kurulum SQL'i") baştan sona yeniden çalıştırmanız yeterli — dönüş tipi değişen fonksiyonları kendisi düşürüp yeniden kurar, veriye dokunmaz.
 
 ## Ekranlar
 
 | Ekran | İçerik |
 |---|---|
-| **Özet** | "Bugün aktif" hero sayısı + düne göre delta, seçtiğiniz metrik kartları (haftalık aktif, bağlılık, kayıtlar + sparkline, sağlayıcı, cihaz), son hareketler akışı |
-| **Kullanıcılar** | Aranabilir kullanıcı listesi, son görülme, sağlayıcı glifleri; satıra dokununca giriş zaman çizelgesi |
+| **Özet** | "Bugün aktif" hero + düne göre delta, üstte **proje seçici**; kartlar: haftalık aktif, bağlılık, şu an çevrimiçi, bugünkü girişler, kayıtlar + sparkline, haftalık büyüme, doğrulanmamış, MFA, açık oturumlar, sağlayıcı, cihaz; **en aktif kullanıcılar** (avatarlı) ve son hareketler akışı |
+| **Kullanıcılar** | Aranabilir liste (isim/e-posta), **profil fotoğrafları**, sonsuz kaydırmayla tüm kullanıcılar; satıra dokununca giriş zaman çizelgesi |
 | **Grafikler** | 7/30/90 günlük aktif ve kayıt serileri, sağlayıcı/cihaz kırılımları |
-| **Ayarlar** | Bağlantı durumu ve sıfırlama, Face ID/parmak izi kilidi, metrik anahtarları, vurgu rengi |
+| **Ayarlar** | Bağlantı durumu ve sıfırlama, **proje listesi** (ekle/kaldır), Face ID/parmak izi kilidi, metrik anahtarları, vurgu rengi |
 
 *Ekran görüntüleri yakında.*
 

@@ -1,7 +1,8 @@
 import Constants from 'expo-constants';
 import * as Haptics from 'expo-haptics';
 import * as LocalAuthentication from 'expo-local-authentication';
-import { useEffect, useState } from 'react';
+import { useRouter } from 'expo-router';
+import { useState } from 'react';
 import {
   Alert,
   Linking,
@@ -17,28 +18,38 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { SetupGuide } from '@/components/setup-guide';
 import { T } from '@/lib/i18n';
-import { loadCredentials, wipeEverything, type MetricKey } from '@/lib/prefs';
+import { wipeEverything, type MetricKey } from '@/lib/prefs';
 import { usePrefs } from '@/lib/prefs-context';
-import { projectHost, resetClient } from '@/lib/supabase';
+import { resetClient } from '@/lib/supabase';
 import { accents, colors, radius, type as t, useTheme, type AccentKey } from '@/lib/theme';
 
 const GITHUB_URL = 'https://github.com/omersengul1/supalytics';
 const METRIC_KEYS: MetricKey[] = ['active', 'signups', 'providers', 'devices', 'sessions', 'activity'];
 
 export default function Settings() {
-  const { prefs, update, resetToDefaults } = usePrefs();
+  const { prefs, update, resetToDefaults, removeProject } = usePrefs();
   const { accent, accentColor, setAccent } = useTheme();
   const insets = useSafeAreaInsets();
-  const [host, setHost] = useState<string | null>(null);
+  const router = useRouter();
   const [sqlVisible, setSqlVisible] = useState(false);
 
-  useEffect(() => {
-    if (prefs.demoMode) {
-      setHost(null);
-      return;
-    }
-    loadCredentials().then((creds) => setHost(creds ? projectHost(creds.url) : null));
-  }, [prefs.demoMode]);
+  const activeLabel = prefs.demoMode
+    ? T.connDemo
+    : (prefs.projects.find((p) => p.id === prefs.activeProjectId)?.label ?? T.connNone);
+
+  const confirmRemoveProject = (id: string, label: string) => {
+    Alert.alert(T.removeProjectTitle, T.removeProjectBody(label), [
+      { text: T.cancel, style: 'cancel' },
+      {
+        text: T.removeProjectConfirm,
+        style: 'destructive',
+        onPress: () => {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+          removeProject(id);
+        },
+      },
+    ]);
+  };
 
   const confirmWipe = () => {
     Alert.alert(T.wipeTitle, T.wipeBody, [
@@ -97,7 +108,7 @@ export default function Settings() {
 
       <Section title={T.secConnection}>
         <Row
-          label={prefs.demoMode ? T.connDemo : host ?? T.connNone}
+          label={activeLabel}
           sub={prefs.demoMode ? T.connDemoSub : T.connProjectSub}
         />
         <Pressable onPress={() => setSqlVisible(true)}>
@@ -109,6 +120,28 @@ export default function Settings() {
           <Text style={[t.body, { color: colors.danger, fontSize: 15, fontWeight: '600' }]}>
             {T.wipe}
           </Text>
+        </Pressable>
+      </Section>
+
+      <Section title={T.secProjects}>
+        {prefs.projects.map((p) => {
+          const active = !prefs.demoMode && p.id === prefs.activeProjectId;
+          return (
+            <Row key={p.id} label={p.label} sub={active ? T.projectActiveSub : undefined}>
+              <Pressable
+                onPress={() => confirmRemoveProject(p.id, p.label)}
+                hitSlop={10}
+                accessibilityLabel={T.removeProjectTitle}
+              >
+                <Text style={[t.body, { color: colors.danger, fontSize: 16 }]}>✕</Text>
+              </Pressable>
+            </Row>
+          );
+        })}
+        <Pressable onPress={() => router.push('/add-project')}>
+          <Row label={`＋ ${T.projectAdd}`} sub={T.projectAddSub}>
+            <Text style={[t.body, { color: accentColor, fontSize: 18 }]}>›</Text>
+          </Row>
         </Pressable>
       </Section>
 

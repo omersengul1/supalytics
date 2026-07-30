@@ -1,25 +1,22 @@
 import * as Haptics from 'expo-haptics';
 import { useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Field, PrimaryButton } from '@/components/form';
 import { SetupGuide } from '@/components/setup-guide';
-import { probeAdminAccess } from '@/lib/api';
 import { T } from '@/lib/i18n';
 import { usePrefs } from '@/lib/prefs-context';
-import { saveCredentials, type MetricKey } from '@/lib/prefs';
-import { assertPublicKey, createClientFromCreds, normalizeProjectUrl } from '@/lib/supabase';
+import type { MetricKey } from '@/lib/prefs';
 import { accents, colors, radius, type as t, useTheme, type AccentKey } from '@/lib/theme';
 
 type StepId = 'manifesto' | 'metrics' | 'source' | 'sql' | 'connect' | 'accent';
@@ -28,7 +25,7 @@ type SourceMode = 'real' | 'demo' | null;
 const METRIC_KEYS: MetricKey[] = ['active', 'signups', 'providers', 'devices', 'sessions', 'activity'];
 
 export default function Onboarding() {
-  const { update } = usePrefs();
+  const { update, connectProject } = usePrefs();
   const { accent, accentColor, setAccent } = useTheme();
   const insets = useSafeAreaInsets();
 
@@ -69,30 +66,8 @@ export default function Onboarding() {
     setConnecting(true);
     setConnectError(null);
     try {
-      const cleanUrl = normalizeProjectUrl(url);
-      const key = anonKey.trim();
-      if (!key) throw new Error(T.errKeyRequired);
-      assertPublicKey(key);
-      if (!email.trim() || !password) throw new Error(T.errCredsRequired);
-      const client = createClientFromCreds({ url: cleanUrl, anonKey: key });
-      const { error } = await client.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      });
-      if (error) {
-        throw new Error(
-          error.message === 'Invalid login credentials' ? T.errBadLogin : error.message,
-        );
-      }
-      // Giriş yetmez: admin listesinde olduğunu gerçek bir RPC ile kanıtla.
-      await probeAdminAccess();
-      try {
-        await saveCredentials({ url: cleanUrl, anonKey: key });
-      } catch {
-        // SecureStore bu istemcide bozuk (ör. eski Expo Go) — sırları düz
-        // depoya YAZMAYIZ; kullanıcıya durumu anlatır, akışı durdururuz.
-        throw new Error(T.errSecureStore);
-      }
+      // Doğrulama + giriş + admin kanıtı + kayıt tek yerde: prefs-context.
+      await connectProject({ url, anonKey, email, password });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       advance();
     } catch (e) {
@@ -359,57 +334,6 @@ function SelectRow({
   );
 }
 
-function Field({
-  label,
-  help,
-  ...inputProps
-}: { label: string; help?: string } & React.ComponentProps<typeof TextInput>) {
-  return (
-    <View style={{ gap: 5 }}>
-      <Text style={t.label}>{label}</Text>
-      <TextInput
-        {...inputProps}
-        autoCapitalize="none"
-        autoCorrect={false}
-        placeholderTextColor={colors.tertiary}
-        style={styles.input}
-      />
-      {help ? <Text style={[t.caption, { lineHeight: 15 }]}>{help}</Text> : null}
-    </View>
-  );
-}
-
-function PrimaryButton({
-  label,
-  onPress,
-  disabled,
-  loading,
-}: {
-  label: string;
-  onPress: () => void;
-  disabled?: boolean;
-  loading?: boolean;
-}) {
-  const { accentColor } = useTheme();
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      style={({ pressed }) => [
-        styles.primary,
-        { backgroundColor: accentColor, opacity: disabled ? 0.5 : pressed ? 0.85 : 1 },
-        pressed && { transform: [{ scale: 0.99 }] },
-      ]}
-    >
-      {loading ? (
-        <ActivityIndicator color={colors.bg} />
-      ) : (
-        <Text style={styles.primaryText}>{label}</Text>
-      )}
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
@@ -468,16 +392,6 @@ const styles = StyleSheet.create({
   },
   cardLabel: {
     letterSpacing: 0.8,
-  },
-  input: {
-    backgroundColor: colors.elevated,
-    borderRadius: radius.control,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    color: colors.text,
   },
   option: {
     flexDirection: 'row',
@@ -538,16 +452,5 @@ const styles = StyleSheet.create({
   dot: {
     height: 8,
     borderRadius: 4,
-  },
-  primary: {
-    height: 52,
-    borderRadius: radius.control,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  primaryText: {
-    color: colors.bg,
-    fontSize: 16,
-    fontWeight: '700',
   },
 });

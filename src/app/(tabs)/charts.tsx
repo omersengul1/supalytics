@@ -33,6 +33,7 @@ export default function Charts() {
     metricSet.has('devices');
 
   // Seçilmeyen metriğin verisi çekilmez (SQL'i kurulmamış olabilir).
+  // demoMode/activeProjectId bağımlılıkları: proje değişince yeniden yükle.
   const load = useCallback(
     async (range: number) => {
       const jobs: Promise<void>[] = [];
@@ -50,7 +51,7 @@ export default function Charts() {
           : null,
       );
     },
-    [metricSet],
+    [metricSet, prefs.demoMode, prefs.activeProjectId],
   );
 
   useEffect(() => {

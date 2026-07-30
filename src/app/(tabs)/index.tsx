@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Avatar } from '@/components/avatar';
 import { MetricCard } from '@/components/metric-card';
+import { ProjectSwitcher } from '@/components/project-switcher';
 import { PulseDot } from '@/components/pulse-dot';
 import { Sparkline } from '@/components/sparkline';
 import {
@@ -11,6 +13,7 @@ import {
   fetchDevices,
   fetchProviders,
   fetchSignupSeries,
+  fetchTopUsers,
   fetchTotals,
 } from '@/lib/api';
 import {
@@ -29,6 +32,7 @@ import type {
   DeviceSlice,
   ProviderSlice,
   SeriesPoint,
+  TopUser,
   Totals,
 } from '@/lib/types';
 
@@ -42,6 +46,7 @@ export default function Overview() {
   const [signups, setSignups] = useState<SeriesPoint[]>([]);
   const [providers, setProviders] = useState<ProviderSlice[]>([]);
   const [devices, setDevices] = useState<DeviceSlice[]>([]);
+  const [topUsers, setTopUsers] = useState<TopUser[]>([]);
   const [activity, setActivity] = useState<ActivityRow[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,9 +55,13 @@ export default function Overview() {
 
   // Yalnızca seçili metriklerin verisi çekilir: seçilmeyen metrik, kurulumda
   // SQL'i atlanmış olabilir — boşuna RPC hatası üretmeyelim.
+  // Bağımlılıklardaki demoMode/activeProjectId: proje değişince yeniden yükle.
   const load = useCallback(async () => {
     const jobs: Promise<void>[] = [fetchTotals().then(setTotals)];
-    if (metricSet.has('active')) jobs.push(fetchDauSeries(30).then(setDau));
+    if (metricSet.has('active')) {
+      jobs.push(fetchDauSeries(30).then(setDau));
+      jobs.push(fetchTopUsers(30, 5).then(setTopUsers));
+    }
     if (metricSet.has('signups')) jobs.push(fetchSignupSeries(30).then(setSignups));
     if (metricSet.has('providers')) jobs.push(fetchProviders().then(setProviders));
     if (metricSet.has('devices') || metricSet.has('sessions'))
@@ -70,7 +79,7 @@ export default function Overview() {
           : T.errFetchGeneric
         : null,
     );
-  }, [metricSet]);
+  }, [metricSet, prefs.demoMode, prefs.activeProjectId]);
 
   useEffect(() => {
     load();
@@ -86,6 +95,12 @@ export default function Overview() {
     if (dau.length < 2) return null;
     return pctDelta(dau[dau.length - 1].users, dau[dau.length - 2].users);
   }, [dau]);
+
+  // Haftalık büyüme: bu haftanın kayıtları vs önceki hafta.
+  const growth = useMemo(() => {
+    if (!totals || totals.new_prev_week <= 0) return null;
+    return Math.round(((totals.new_week - totals.new_prev_week) / totals.new_prev_week) * 100);
+  }, [totals]);
 
   // Hero seçime uyar: aktiflik izlenmiyorsa toplam kullanıcı gösterilir.
   const heroIsActive = metricSet.has('active');
@@ -112,6 +127,19 @@ export default function Overview() {
           value={totals.mau > 0 ? `${Math.round((totals.dau / totals.mau) * 100)}%` : '—'}
           sub={T.cardEngagementSub}
         />
+        <MetricCard
+          style={styles.half}
+          label={T.cardOnlineNow}
+          value={compact(totals.online_now)}
+          sub={T.cardOnlineNowSub}
+          subTone="accent"
+        />
+        <MetricCard
+          style={styles.half}
+          label={T.cardLoginsToday}
+          value={compact(totals.logins_today)}
+          sub={T.cardLoginsTodaySub}
+        />
       </View>
     );
 
@@ -132,14 +160,42 @@ export default function Overview() {
           value={compact(totals.total_users)}
           sub={T.cardTotalUsersSub}
         />
-        {metricSet.has('sessions') ? (
-          <MetricCard
-            style={styles.half}
-            label={T.cardSessions}
-            value={compact(sessionTotal)}
-            sub={T.cardSessionsSub}
-          />
-        ) : null}
+        <MetricCard
+          style={styles.half}
+          label={T.cardGrowth}
+          value={growth === null ? '—' : `${growth >= 0 ? '+' : ''}${growth}%`}
+          sub={T.cardGrowthSub(compact(totals.new_week), compact(totals.new_prev_week))}
+          subTone={growth !== null && growth < 0 ? 'danger' : 'accent'}
+        />
+        <MetricCard
+          style={styles.half}
+          label={T.cardUnconfirmed}
+          value={compact(totals.unconfirmed_users)}
+          sub={T.cardUnconfirmedSub}
+        />
+        <MetricCard
+          style={styles.half}
+          label={T.cardMfa}
+          value={compact(totals.mfa_users)}
+          sub={T.cardMfaSub}
+        />
+      </View>
+    );
+
+    const sessionCards = metricSet.has('sessions') && totals && (
+      <View key="sessions" style={styles.gridRowGroup}>
+        <MetricCard
+          style={styles.half}
+          label={T.cardOpenSessions}
+          value={compact(totals.open_sessions)}
+          sub={T.cardOpenSessionsSub}
+        />
+        <MetricCard
+          style={styles.half}
+          label={T.cardSessions}
+          value={compact(sessionTotal)}
+          sub={T.cardSessionsSub}
+        />
       </View>
     );
 
@@ -163,27 +219,16 @@ export default function Overview() {
       />
     );
 
-    const sessionsOnly = !metricSet.has('signups') && metricSet.has('sessions') && (
-      <MetricCard
-        key="sessions"
-        style={styles.half}
-        label={T.cardSessions}
-        value={compact(sessionTotal)}
-        sub={T.cardSessionsSub}
-      />
-    );
-
-    const tail = (
+    const tail = (providerCard || deviceCard) && (
       <View key="tail" style={styles.gridRowGroup}>
         {providerCard}
         {deviceCard}
-        {sessionsOnly}
       </View>
     );
 
-    list.push(activeCards, signupCards, tail);
+    list.push(activeCards, signupCards, sessionCards, tail);
     return list;
-  }, [metricSet, totals, signups, providers, devices]);
+  }, [metricSet, totals, signups, providers, devices, growth]);
 
   return (
     <ScrollView
@@ -198,11 +243,7 @@ export default function Overview() {
     >
       <View style={styles.topRow}>
         <Text style={styles.wordmark}>supalytics</Text>
-        {prefs.demoMode ? (
-          <View style={styles.demoBadge}>
-            <Text style={[t.caption, { color: colors.secondary }]}>{T.demoBadge}</Text>
-          </View>
-        ) : null}
+        <ProjectSwitcher />
       </View>
 
       <View style={styles.hero}>
@@ -235,17 +276,41 @@ export default function Overview() {
 
       {cards}
 
+      {metricSet.has('active') && topUsers.length > 0 ? (
+        <View style={styles.listCard}>
+          <Text style={[t.label, styles.listTitle]}>{T.topUsersTitle}</Text>
+          {topUsers.map((u, i) => (
+            <View key={u.user_id} style={[styles.listRow, i === 0 && { borderTopWidth: 0 }]}>
+              <Avatar url={u.avatar_url} seed={u.name ?? u.email ?? '?'} size={34} />
+              <View style={{ flex: 1, gap: 1 }}>
+                <Text style={[t.body, { fontSize: 14 }]} numberOfLines={1}>
+                  {u.name ?? u.email ?? T.unknownUser}
+                </Text>
+                <Text style={t.caption} numberOfLines={1}>
+                  {T.lastSeen(timeAgo(u.last_seen))}
+                </Text>
+              </View>
+              <Text style={[t.caption, { color: accentColor, fontWeight: '700' }]}>
+                {T.topUserEvents(compact(u.events))}
+              </Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
       {metricSet.has('activity') && activity.length > 0 ? (
-        <View style={styles.activityCard}>
-          <Text style={[t.label, styles.activityTitle]}>{T.activityTitle}</Text>
+        <View style={[styles.listCard, { marginTop: 12 }]}>
+          <Text style={[t.label, styles.listTitle]}>{T.activityTitle}</Text>
           {activity.map((row, i) => (
-            <View key={i} style={[styles.activityRow, i === 0 && { borderTopWidth: 0 }]}>
-              <Text style={[t.body, { fontSize: 14 }]} numberOfLines={1}>
-                {row.email ?? T.unknownUser}
-              </Text>
-              <Text style={t.caption} numberOfLines={1}>
-                {actionLabel(row.action)} · {deviceLabel(row.device)} · {timeAgo(row.created_at)}
-              </Text>
+            <View key={i} style={[styles.listRow, i === 0 && { borderTopWidth: 0 }]}>
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={[t.body, { fontSize: 14 }]} numberOfLines={1}>
+                  {row.email ?? T.unknownUser}
+                </Text>
+                <Text style={t.caption} numberOfLines={1}>
+                  {actionLabel(row.action)} · {deviceLabel(row.device)} · {timeAgo(row.created_at)}
+                </Text>
+              </View>
             </View>
           ))}
         </View>
@@ -273,14 +338,6 @@ const styles = StyleSheet.create({
     color: colors.tertiary,
     letterSpacing: 3,
   },
-  demoBadge: {
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    backgroundColor: colors.surface,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
   hero: {
     marginBottom: 28,
     gap: 4,
@@ -306,7 +363,7 @@ const styles = StyleSheet.create({
   full: {
     flexBasis: '100%',
   },
-  activityCard: {
+  listCard: {
     backgroundColor: colors.surface,
     borderRadius: radius.card,
     borderWidth: StyleSheet.hairlineWidth,
@@ -314,13 +371,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-  activityTitle: {
+  listTitle: {
     letterSpacing: 0.8,
     marginBottom: 4,
   },
-  activityRow: {
+  listRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
     paddingVertical: 10,
-    gap: 2,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.hairline,
   },
