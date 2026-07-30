@@ -288,6 +288,7 @@ drop function if exists public.supalytics_user_list(text, int, int);
 drop function if exists public.supalytics_top_users(int, int);
 drop function if exists public.supalytics_cohort(text, int);
 drop function if exists public.supalytics_user_profile(uuid);
+drop function if exists public.supalytics_user_sessions(uuid);
 
 create function public.supalytics_totals()
 returns table (
@@ -737,9 +738,12 @@ returns table (
   last_sign_in_at timestamptz,
   confirmed       boolean,
   mfa             boolean,
+  banned          boolean,
+  phone           text,
   device          text,
   user_agent      text,
-  events_30d      bigint
+  events_30d      bigint,
+  metadata        jsonb
 )
 language plpgsql
 stable
@@ -779,6 +783,8 @@ begin
     (u.email_confirmed_at is not null or u.phone_confirmed_at is not null),
     exists (select 1 from auth.mfa_factors f
              where f.user_id = u.id and f.status = 'verified'),
+    (u.banned_until is not null and u.banned_until > now()),
+    nullif(u.phone::text, ''),
     analytics.device_of(ua),
     ua,
     (select count(*) from (
@@ -793,9 +799,46 @@ begin
        select date_trunc('minute', ev.created_at)
          from analytics.events_since(now() - interval '30 days') ev
         where ev.user_id = u.id and ev.action in ('login', 'token_refreshed')
-     ) acts)
+     ) acts),
+    -- Uygulamanın kullanıcıya yazdığı özel alanlar; standart OAuth anahtarları ayıklanır.
+    (u.raw_user_meta_data
+       - 'avatar_url' - 'picture' - 'full_name' - 'name' - 'user_name'
+       - 'preferred_username' - 'iss' - 'sub' - 'email' - 'email_verified'
+       - 'phone_verified' - 'provider_id' - 'aud')
   from auth.users u
   where u.id = uid;
+end;
+$$;
+
+-- Kullanıcının açık oturumları: hangi cihazlarda hâlâ oturumu var, hangi
+-- IP'den, en son ne zaman etkindi.
+create function public.supalytics_user_sessions(uid uuid)
+returns table (
+  device      text,
+  user_agent  text,
+  ip          text,
+  created_at  timestamptz,
+  last_active timestamptz
+)
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+begin
+  if not analytics.is_admin() then raise exception 'forbidden'; end if;
+  return query
+  select
+    analytics.device_of(s.user_agent),
+    s.user_agent,
+    host(s.ip),
+    s.created_at,
+    coalesce(s.refreshed_at, s.updated_at, s.created_at)::timestamptz
+  from auth.sessions s
+  where s.user_id = uid
+    and (s.not_after is null or s.not_after > now())
+  order by coalesce(s.refreshed_at, s.updated_at, s.created_at) desc
+  limit 20;
 end;
 $$;
 
@@ -894,6 +937,7 @@ revoke all on function public.supalytics_user_list(text, int, int)    from publi
 revoke all on function public.supalytics_top_users(int, int)          from public, anon;
 revoke all on function public.supalytics_cohort(text, int)            from public, anon;
 revoke all on function public.supalytics_user_profile(uuid)           from public, anon;
+revoke all on function public.supalytics_user_sessions(uuid)          from public, anon;
 revoke all on function public.supalytics_user_detail(uuid, int)       from public, anon;
 revoke all on function public.supalytics_recent_activity(int)         from public, anon;
 revoke all on function public.supalytics_whoami()                     from public;
@@ -907,6 +951,7 @@ grant execute on function public.supalytics_user_list(text, int, int) to authent
 grant execute on function public.supalytics_top_users(int, int)       to authenticated;
 grant execute on function public.supalytics_cohort(text, int)         to authenticated;
 grant execute on function public.supalytics_user_profile(uuid)        to authenticated;
+grant execute on function public.supalytics_user_sessions(uuid)       to authenticated;
 grant execute on function public.supalytics_user_detail(uuid, int)    to authenticated;
 grant execute on function public.supalytics_recent_activity(int)      to authenticated;
 grant execute on function public.supalytics_whoami()                  to anon, authenticated;

@@ -92,9 +92,22 @@ export interface UserProfile {
   last_sign_in_at: string | null;
   confirmed: boolean;
   mfa: boolean;
+  banned: boolean;
+  phone: string | null;
   device: string;
   user_agent: string | null;
   events_30d: number;
+  /** Uygulamanın kullanıcıya yazdığı özel alanlar (OAuth standartları ayıklı). */
+  metadata: Record<string, unknown> | null;
+}
+
+/** Kullanıcının açık oturumu (supalytics_user_sessions). */
+export interface UserSession {
+  device: string;
+  user_agent: string | null;
+  ip: string | null;
+  created_at: string;
+  last_active: string;
 }
 
 /** Listelerden profile geçerken taşınan asgari kimlik (başlık anında çizilir). */

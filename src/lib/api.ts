@@ -12,6 +12,7 @@ import {
   mockTotals,
   mockUserDetail,
   mockUserProfile,
+  mockUserSessions,
   mockUsers,
 } from './mock';
 import { T } from './i18n';
@@ -29,6 +30,7 @@ import {
   type UserEvent,
   type UserProfile,
   type UserRow,
+  type UserSession,
 } from './types';
 
 export const USERS_PAGE_SIZE = 50;
@@ -156,4 +158,9 @@ export async function fetchUserProfile(uid: string): Promise<UserProfile | null>
   if (demoMode) return demo(mockUserProfile(uid));
   const rows = await rpc<UserProfile[]>('supalytics_user_profile', { uid });
   return rows?.[0] ?? null;
+}
+
+export function fetchUserSessions(uid: string): Promise<UserSession[]> {
+  if (demoMode) return demo(mockUserSessions(uid));
+  return rpc<UserSession[]>('supalytics_user_sessions', { uid });
 }

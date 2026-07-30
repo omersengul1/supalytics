@@ -13,6 +13,7 @@ import type {
   UserEvent,
   UserProfile,
   UserRow,
+  UserSession,
 } from './types';
 
 const BASE_SEED = 0x50a17;
@@ -282,10 +283,45 @@ export function mockUserProfile(uid: string): UserProfile | null {
     last_sign_in_at: user.last_sign_in_at,
     confirmed: idx % 11 !== 3,
     mfa: idx % 7 === 0,
+    banned: idx % 23 === 5,
+    phone: idx % 6 === 0 ? `+90555${String(1000000 + idx * 137).slice(0, 7)}` : null,
     device: user.device,
     user_agent: MOCK_UAS[user.device] ?? null,
     events_30d: user.last_sign_in_at ? Math.floor(rnd() * 38) + 2 : 0,
+    metadata:
+      idx % 3 === 0
+        ? { plan: idx % 6 === 0 ? 'pro' : 'free', username: (user.email ?? '').split('@')[0] }
+        : null,
   };
+}
+
+export function mockUserSessions(uid: string): UserSession[] {
+  const users = allUsers();
+  const idx = users.findIndex((u) => u.id === uid);
+  const user = users[idx === -1 ? 0 : idx];
+  if (!user.last_sign_in_at) return [];
+  const rnd = mulberry32(BASE_SEED + 601 + idx);
+  const now = anchorNow().getTime();
+  const rows: UserSession[] = [
+    {
+      device: user.device,
+      user_agent: MOCK_UAS[user.device] ?? null,
+      ip: `85.100.${Math.floor(rnd() * 255)}.${Math.floor(rnd() * 255)}`,
+      created_at: new Date(now - Math.floor(rnd() * 5 + 1) * 86400_000).toISOString(),
+      last_active: user.last_sign_in_at,
+    },
+  ];
+  if (idx % 4 === 0) {
+    const other = user.device === 'iOS' ? 'Windows' : 'iOS';
+    rows.push({
+      device: other,
+      user_agent: MOCK_UAS[other] ?? null,
+      ip: `78.163.${Math.floor(rnd() * 255)}.${Math.floor(rnd() * 255)}`,
+      created_at: new Date(now - Math.floor(rnd() * 20 + 6) * 86400_000).toISOString(),
+      last_active: new Date(now - Math.floor(rnd() * 4 + 1) * 86400_000).toISOString(),
+    });
+  }
+  return rows;
 }
 
 const MOCK_UAS: Record<string, string> = {
