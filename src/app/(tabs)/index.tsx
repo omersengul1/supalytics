@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -81,9 +82,15 @@ export default function Overview() {
     );
   }, [metricSet, prefs.demoMode, prefs.activeProjectId]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  // Sekmeye her dönüşte tazele; ekran açık kaldığı sürece 60 sn'de bir
+  // kendini yeniler (RPC yanıtları KB mertebesinde — kotaya etkisi yok).
+  useFocusEffect(
+    useCallback(() => {
+      load();
+      const timer = setInterval(load, 60_000);
+      return () => clearInterval(timer);
+    }, [load]),
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);

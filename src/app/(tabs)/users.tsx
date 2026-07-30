@@ -1,3 +1,4 @@
+import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -65,6 +66,22 @@ export default function Users() {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, [query, load]);
+
+  // Sekmeye geri dönüldüğünde listeyi tazele. İlk odak, üstteki debounce
+  // etkisiyle zaten yüklendiği için atlanır; query ref üzerinden okunur ki
+  // yazarken (callback kimliği değişip) çifte istek atılmasın.
+  const queryRef = useRef(query);
+  queryRef.current = query;
+  const focusedOnce = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (!focusedOnce.current) {
+        focusedOnce.current = true;
+        return;
+      }
+      load(queryRef.current);
+    }, [load]),
+  );
 
   const loadMore = useCallback(async () => {
     if (loadingMore || loading || !hasMore) return;

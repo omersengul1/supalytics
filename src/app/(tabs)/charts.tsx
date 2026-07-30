@@ -1,5 +1,6 @@
 import * as Haptics from 'expo-haptics';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -54,9 +55,12 @@ export default function Charts() {
     [metricSet, prefs.demoMode, prefs.activeProjectId],
   );
 
-  useEffect(() => {
-    load(days);
-  }, [days, load]);
+  // Sekmeye her dönüşte (ve aralık/proje değişince) tazele.
+  useFocusEffect(
+    useCallback(() => {
+      load(days);
+    }, [days, load]),
+  );
 
   return (
     <ScrollView

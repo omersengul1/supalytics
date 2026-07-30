@@ -132,10 +132,99 @@ begin
     e.created_at
   from auth.audit_log_entries e
   where e.created_at > last_ts - interval '1 minute'
+    and not exists (
+      select 1 from analytics.login_history h2
+       where h2.user_id = nullif(e.payload ->> 'actor_id', '')::uuid
+         and h2.action = coalesce(e.payload ->> 'action', 'unknown')
+         and h2.created_at between e.created_at - interval '5 seconds'
+                               and e.created_at + interval '5 seconds'
+    )
   on conflict (id) do nothing;
 
   get diagnostics inserted = row_count;
   return inserted;
+end;
+$$;
+
+${c(
+  'Girişleri veritabanının KENDİSİ kaydeder: last_sign_in_at her girişte güncellenir;',
+  'The database records sign-ins ITSELF: last_sign_in_at updates on every sign-in;',
+)}
+${c(
+  'bu tetikleyiciler audit log boş/kapalı olsa bile geçmişi biriktirir. Hata girişi asla engellemez.',
+  'these triggers accumulate history even if the audit log is empty/disabled. Errors never block a sign-in.',
+)}
+create or replace function analytics.track_signin()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  begin
+    if new.last_sign_in_at is not null
+       and new.last_sign_in_at is distinct from old.last_sign_in_at
+       and not exists (
+         select 1 from analytics.login_history h
+          where h.user_id = new.id
+            and h.action = 'login'
+            and h.created_at between new.last_sign_in_at - interval '5 seconds'
+                                 and new.last_sign_in_at + interval '5 seconds'
+       )
+    then
+      insert into analytics.login_history (id, user_id, email, action, ip, user_agent, created_at)
+      values (
+        gen_random_uuid(),
+        new.id,
+        new.email,
+        'login',
+        null,
+        (select s.user_agent from auth.sessions s
+          where s.user_id = new.id
+          order by s.created_at desc
+          limit 1),
+        new.last_sign_in_at
+      );
+    end if;
+  exception when others then
+    null;
+  end;
+  return new;
+end;
+$$;
+
+create or replace function analytics.track_signup()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  begin
+    insert into analytics.login_history (id, user_id, email, action, ip, user_agent, created_at)
+    values (gen_random_uuid(), new.id, new.email, 'user_signedup', null, null,
+            coalesce(new.created_at, now()));
+  exception when others then
+    null;
+  end;
+  return new;
+end;
+$$;
+
+do $$
+begin
+  begin
+    drop trigger if exists supalytics_track_signin on auth.users;
+    create trigger supalytics_track_signin
+      after update of last_sign_in_at on auth.users
+      for each row execute function analytics.track_signin();
+    drop trigger if exists supalytics_track_signup on auth.users;
+    create trigger supalytics_track_signup
+      after insert on auth.users
+      for each row execute function analytics.track_signup();
+  exception when others then
+    raise notice 'auth.users trigger: %', sqlerrm;
+  end;
 end;
 $$;`;
 
@@ -182,6 +271,13 @@ as $$
     cross join cutoff c
    where e.created_at > c.ts
      and e.created_at >= since
+     and not exists (
+       select 1 from analytics.login_history h3
+        where h3.user_id = nullif(e.payload ->> 'actor_id', '')::uuid
+          and h3.action = coalesce(e.payload ->> 'action', 'unknown')
+          and h3.created_at between e.created_at - interval '5 seconds'
+                                and e.created_at + interval '5 seconds'
+     )
 $$;`
     : `${c(
         'Olay kaynağı: canlı audit log (arşivsiz çekirdek kurulum).',
@@ -224,6 +320,9 @@ drop function if exists public.supalytics_totals();
 drop function if exists public.supalytics_user_list(text, int, int);
 drop function if exists public.supalytics_top_users(int, int);`;
 
+// Aktiflik ÜÇ sinyalin birleşimi: last_sign_in_at (her girişte güncellenir,
+// asla silinmez) + canlı oturum hareketi + olay geçmişi. Audit log boş/kapalı
+// projelerde bile doğru sayılar üretir.
 const RPC_TOTALS = () =>
   `create function public.supalytics_totals()
 returns table (
@@ -246,6 +345,8 @@ stable
 security definer
 set search_path = ''
 as $$
+declare
+  day_start timestamptz := date_trunc('day', now());
 begin
   if not analytics.is_admin() then raise exception 'forbidden'; end if;
   return query
@@ -253,24 +354,48 @@ begin
     (select count(*) from auth.users),
     (select count(*) from auth.users u
       where u.email_confirmed_at is null and u.phone_confirmed_at is null),
-    (select count(*) from auth.users u where u.created_at >= date_trunc('day', now())),
+    (select count(*) from auth.users u where u.created_at >= day_start),
     (select count(*) from auth.users u where u.created_at >= now() - interval '7 days'),
     (select count(*) from auth.users u where u.created_at >= now() - interval '30 days'),
     (select count(*) from auth.users u
       where u.created_at >= now() - interval '14 days'
         and u.created_at <  now() - interval '7 days'),
-    (select count(distinct ev.user_id) from analytics.events_since(date_trunc('day', now())) ev
-      where ev.action in ('login', 'token_refreshed')),
-    (select count(distinct ev.user_id) from analytics.events_since(now() - interval '7 days') ev
-      where ev.action in ('login', 'token_refreshed')),
-    (select count(distinct ev.user_id) from analytics.events_since(now() - interval '30 days') ev
-      where ev.action in ('login', 'token_refreshed')),
-    (select count(*) from analytics.events_since(date_trunc('day', now())) ev
-      where ev.action = 'login'),
+    (select count(distinct a.uid) from (
+       select u.id as uid from auth.users u where u.last_sign_in_at >= day_start
+       union
+       select s.user_id from auth.sessions s
+        where coalesce(s.refreshed_at, s.updated_at, s.created_at) >= day_start
+       union
+       select ev.user_id from analytics.events_since(day_start) ev
+        where ev.action in ('login', 'token_refreshed') and ev.user_id is not null
+     ) a),
+    (select count(distinct a.uid) from (
+       select u.id as uid from auth.users u where u.last_sign_in_at >= now() - interval '7 days'
+       union
+       select s.user_id from auth.sessions s
+        where coalesce(s.refreshed_at, s.updated_at, s.created_at) >= now() - interval '7 days'
+       union
+       select ev.user_id from analytics.events_since(now() - interval '7 days') ev
+        where ev.action in ('login', 'token_refreshed') and ev.user_id is not null
+     ) a),
+    (select count(distinct a.uid) from (
+       select u.id as uid from auth.users u where u.last_sign_in_at >= now() - interval '30 days'
+       union
+       select s.user_id from auth.sessions s
+        where coalesce(s.refreshed_at, s.updated_at, s.created_at) >= now() - interval '30 days'
+       union
+       select ev.user_id from analytics.events_since(now() - interval '30 days') ev
+        where ev.action in ('login', 'token_refreshed') and ev.user_id is not null
+     ) a),
+    (select greatest(
+       (select count(*) from analytics.events_since(day_start) ev where ev.action = 'login'),
+       (select count(*) from auth.sessions s where s.created_at >= day_start),
+       (select count(*) from auth.users u where u.last_sign_in_at >= day_start)
+     )),
     (select count(*) from auth.sessions s
       where s.not_after is null or s.not_after > now()),
     (select count(*) from auth.sessions s
-      where coalesce(s.refreshed_at, s.updated_at, s.created_at) > now() - interval '15 minutes'),
+      where coalesce(s.refreshed_at, s.updated_at, s.created_at) > now() - interval '60 minutes'),
     (select count(distinct f.user_id) from auth.mfa_factors f where f.status = 'verified');
 end;
 $$;
@@ -382,6 +507,8 @@ $$;
 revoke all on function public.supalytics_user_list(text, int, int) from public, anon;
 grant execute on function public.supalytics_user_list(text, int, int) to authenticated;`;
 
+// Dakikaya yuvarlama: aynı girişin farklı kaynaklardan (olay + oturum +
+// last_sign_in_at) gelen kopyaları tek sayılır.
 const RPC_TOP_USERS = () =>
   `create function public.supalytics_top_users(days int default 30, max_rows int default 5)
 returns table (
@@ -397,6 +524,8 @@ stable
 security definer
 set search_path = ''
 as $$
+declare
+  since timestamptz := now() - make_interval(days => least(greatest(days, 1), 365));
 begin
   if not analytics.is_admin() then raise exception 'forbidden'; end if;
   return query
@@ -406,12 +535,21 @@ begin
     coalesce(u.raw_user_meta_data ->> 'full_name', u.raw_user_meta_data ->> 'name'),
     coalesce(u.raw_user_meta_data ->> 'avatar_url', u.raw_user_meta_data ->> 'picture'),
     count(*)::bigint,
-    max(ev.created_at)
-  from analytics.events_since(now() - make_interval(days => least(greatest(days, 1), 365))) ev
-  join auth.users u on u.id = ev.user_id
-  where ev.action in ('login', 'token_refreshed')
+    max(act.ts)
+  from (
+    select ev.user_id as uid, date_trunc('minute', ev.created_at) as ts
+      from analytics.events_since(since) ev
+     where ev.action in ('login', 'token_refreshed') and ev.user_id is not null
+    union
+    select s.user_id, date_trunc('minute', s.created_at)
+      from auth.sessions s where s.created_at >= since
+    union
+    select u2.id, date_trunc('minute', u2.last_sign_in_at)
+      from auth.users u2 where u2.last_sign_in_at >= since
+  ) act
+  join auth.users u on u.id = act.uid
   group by u.id
-  order by count(*) desc, max(ev.created_at) desc
+  order by count(*) desc, max(act.ts) desc
   limit least(greatest(max_rows, 1), 50);
 end;
 $$;
@@ -439,6 +577,8 @@ $$;
 revoke all on function public.supalytics_whoami() from public;
 grant execute on function public.supalytics_whoami() to anon, authenticated;`;
 
+// Günlük seri de üç sinyalden: geçmiş günler tetikleyici/arşiv biriktikçe
+// netleşir; bugünün değeri her durumda dolu gelir.
 const RPC_DAU_SERIES = () =>
   `create or replace function public.supalytics_dau_series(days int default 30)
 returns table (day date, users bigint)
@@ -452,17 +592,26 @@ begin
   return query
   select
     d.day::date,
-    coalesce(count(distinct ev.user_id), 0)::bigint
+    coalesce(count(distinct act.uid), 0)::bigint
   from generate_series(
          current_date - (least(greatest(days, 1), 365) - 1),
          current_date,
          interval '1 day'
        ) as d(day)
-  left join analytics.events_since(
-         (current_date - (least(greatest(days, 1), 365) - 1))::timestamptz) ev
-    on ev.created_at >= d.day
-   and ev.created_at <  d.day + interval '1 day'
-   and ev.action in ('login', 'token_refreshed')
+  left join (
+    select ev.user_id as uid, ev.created_at as ts
+      from analytics.events_since(
+             (current_date - (least(greatest(days, 1), 365) - 1))::timestamptz) ev
+     where ev.action in ('login', 'token_refreshed') and ev.user_id is not null
+    union
+    select s.user_id, s.created_at from auth.sessions s
+    union
+    select s.user_id, coalesce(s.refreshed_at, s.updated_at, s.created_at) from auth.sessions s
+    union
+    select u.id, u.last_sign_in_at from auth.users u where u.last_sign_in_at is not null
+  ) act
+    on act.ts >= d.day
+   and act.ts <  d.day + interval '1 day'
   group by d.day
   order by d.day;
 end;
@@ -531,10 +680,28 @@ as $$
 begin
   if not analytics.is_admin() then raise exception 'forbidden'; end if;
   return query
-  select ev.action, ev.ip, analytics.device_of(ev.user_agent), ev.created_at
-  from analytics.events_since(now() - interval '365 days') ev
-  where ev.user_id = uid
-  order by ev.created_at desc
+  select x.action, x.ip, analytics.device_of(x.user_agent), x.created_at
+  from (
+    select ev.action, ev.ip, ev.user_agent, ev.created_at
+      from analytics.events_since(now() - interval '365 days') ev
+     where ev.user_id = uid
+    union all
+    ${c(
+      'Olay kaydı olmayan oturumlar da zaman çizelgesine girer (giriş olarak).',
+      'Sessions with no recorded event still appear on the timeline (as sign-ins).',
+    )}
+    select 'login', host(s.ip), s.user_agent, s.created_at
+      from auth.sessions s
+     where s.user_id = uid
+       and not exists (
+         select 1 from analytics.login_history h
+          where h.user_id = s.user_id
+            and h.action = 'login'
+            and h.created_at between s.created_at - interval '5 minutes'
+                                 and s.created_at + interval '5 minutes'
+       )
+  ) x
+  order by x.created_at desc
   limit least(greatest(max_events, 1), 200);
 end;
 $$;
@@ -558,14 +725,29 @@ as $$
 begin
   if not analytics.is_admin() then raise exception 'forbidden'; end if;
   return query
-  select
-    coalesce(ev.email, u.email::text),
-    ev.action,
-    analytics.device_of(ev.user_agent),
-    ev.created_at
-  from analytics.events_since(now() - interval '30 days') ev
-  left join auth.users u on u.id = ev.user_id
-  order by ev.created_at desc
+  select x.email, x.action, analytics.device_of(x.user_agent), x.created_at
+  from (
+    select coalesce(ev.email, u.email::text) as email, ev.action, ev.user_agent, ev.created_at
+      from analytics.events_since(now() - interval '30 days') ev
+      left join auth.users u on u.id = ev.user_id
+    union all
+    ${c(
+      'Olay kaydı olmayan oturumlar da akışa girer (giriş olarak).',
+      'Sessions with no recorded event still show in the feed (as sign-ins).',
+    )}
+    select u.email::text, 'login', s.user_agent, s.created_at
+      from auth.sessions s
+      join auth.users u on u.id = s.user_id
+     where s.created_at >= now() - interval '30 days'
+       and not exists (
+         select 1 from analytics.login_history h
+          where h.user_id = s.user_id
+            and h.action = 'login'
+            and h.created_at between s.created_at - interval '5 minutes'
+                                 and s.created_at + interval '5 minutes'
+       )
+  ) x
+  order by x.created_at desc
   limit least(greatest(max_events, 1), 200);
 end;
 $$;

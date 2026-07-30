@@ -41,6 +41,7 @@ Depodaki [`supabase/setup.sql`](supabase/setup.sql), tüm metrikleri kapsayan ta
 - `supalytics_*` RPC'lerini tanımlar (`revoke`/`grant` kapanışıyla),
 - Supabase'in kalıcı olmayan `auth.audit_log_entries` logunu her gece `analytics.login_history`'ye arşivleyen `pg_cron` işini kurar ve ilk backfill'i yapar. Aktiflik/cihaz/akış metrikleri seçilmediyse uygulamanın ürettiği "çekirdek" script bu arşiv katmanını hiç kurmaz.
 - **v2:** metrikler yalnızca arşivden değil, Supabase'in **canlı** tablolarından da beslenir (`auth.audit_log_entries` + `auth.sessions`): "bugün aktif", cihazlar ve akış, gece arşivi daha hiç çalışmamışken bile dolar. Kullanıcı listesi isim + profil fotoğrafı (`raw_user_meta_data`) döner; "en aktif kullanıcılar" ve genişletilmiş `totals` (çevrimiçi, açık oturum, bugünkü girişler, MFA, doğrulanmamış, haftalık büyüme) eklendi.
+- **v3 — audit log'a bağımlılık kalktı:** bazı Supabase projelerinde `auth.audit_log_entries` boştur/yazılmaz. Aktiflik artık üç sinyalin birleşimi: `auth.users.last_sign_in_at` (her girişte güncellenir) + canlı `auth.sessions` hareketi + olay geçmişi. Ayrıca `auth.users` üzerine iki güvenli tetikleyici (`supalytics_track_signin/signup`) her giriş ve kaydı kendi geçmiş tablona yazar — geçmiş, audit log olmadan da birikir. Tetikleyici gövdesi hatayı yutar: analitik, gerçek girişi asla engelleyemez.
 
 > **v1'den yükseltme:** güncel script'i (uygulamada Ayarlar → "Kurulum SQL'i") baştan sona yeniden çalıştırmanız yeterli — dönüş tipi değişen fonksiyonları kendisi düşürüp yeniden kurar, veriye dokunmaz.
 
