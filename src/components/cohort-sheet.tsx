@@ -72,7 +72,7 @@ export function CohortSheet({
         <FlatList
           data={rows}
           keyExtractor={(item) => item.user_id}
-          style={{ maxHeight: 440 }}
+          style={styles.list}
           ListEmptyComponent={
             <Text style={[t.caption, { textAlign: 'center', marginVertical: 16 }]}>
               {T.cohortEmpty}
@@ -115,7 +115,11 @@ export function CohortSheet({
 }
 
 const styles = StyleSheet.create({
+  // Boy sabit: liste async geldiği için içerikten boy alsaydı sayfa açılırken bir
+  // boyda kayıp veri düşünce başka boya geçerdi — açılış iki parçaya bölünürdü.
+  // Sabit boyla açılış tek bir kayma hareketi; liste kendi içinde kayıyor.
   sheet: {
+    height: '72%',
     backgroundColor: colors.surface,
     borderTopLeftRadius: radius.card,
     borderTopRightRadius: radius.card,
@@ -142,10 +146,15 @@ const styles = StyleSheet.create({
     backgroundColor: colors.hairline,
     marginVertical: 12,
   },
+  // Yükleme kutusu ve liste aynı alanı doldurur: ikisi arasında geçerken sayfanın
+  // boyu değişmez.
   loadingBody: {
-    height: 380,
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  list: {
+    flex: 1,
   },
   row: {
     flexDirection: 'row',

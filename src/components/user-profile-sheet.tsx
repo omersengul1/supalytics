@@ -87,7 +87,7 @@ export function UserProfileSheet({
       style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}
     >
       <View style={styles.grabber} />
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView style={styles.body} showsVerticalScrollIndicator={false}>
         <View style={styles.head}>
           <Avatar url={avatar} seed={name ?? email ?? '?'} size={52} />
           <View style={{ flex: 1, gap: 2 }}>
@@ -248,7 +248,9 @@ const styles = StyleSheet.create({
     borderColor: colors.hairline,
     paddingHorizontal: 20,
     paddingTop: 10,
-    maxHeight: '88%',
+    // Sabit boy: profil async geliyor, maxHeight ile açılırken bir boyda kayıp
+    // veri düşünce başka boya geçiyordu. Sabitleyince açılış tek parça.
+    height: '88%',
   },
   grabber: {
     alignSelf: 'center',
@@ -257,6 +259,9 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     backgroundColor: colors.elevated,
     marginBottom: 14,
+  },
+  body: {
+    flex: 1,
   },
   head: {
     flexDirection: 'row',

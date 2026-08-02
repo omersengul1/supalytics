@@ -1,30 +1,33 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import { Modal, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
-import Animated, {
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  Animated,
+  Dimensions,
   Easing,
-  FadeIn,
-  FadeOut,
-  LinearTransition,
-  SlideInDown,
-  SlideOutDown,
-} from 'react-native-reanimated';
+  Modal,
+  Pressable,
+  StyleSheet,
+  View,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 
 // Alt sayfaların ortak kabuğu.
 //
 // Modal'ın kendi animationType'ı bu işe uymuyor: "slide" saydam bir modalda
 // KABIN TAMAMINI kaydırır, tam ekran karartı da dahil — ekranı aşağıdan yukarı
 // süpüren bir karaltı görünürdü. "fade" ise sayfayı hiç hareket ettirmez.
-// Doğrusu ikisini ayırmak: karartı yerinde açılır, sayfa aşağıdan kayar.
+// Doğrusu ikisini ayırmak: karartı yerinde açılır (opacity), sayfa aşağıdan
+// kayar (translateY).
 //
-// İkinci mesele yükseklik: bu sayfaların içeriği async geliyor, sayfa önce
-// yükleniyor hâliyle (kısa) açılıp veri düşünce boyuna sıçrıyordu — "önce az
-// açılıp sonra tamamen açılma" hissi buradan geliyordu. LinearTransition
-// yükseklik değişimini de animasyona bağlıyor, böylece açılış tek bir kesintisiz
-// hareket olarak okunuyor. SlideInDown yüksekliği kendi ölçtüğü için ayrıca
-// ölçüm tutmaya gerek yok.
+// Animasyon RN'in kendi Animated'ıyla sürülüyor. Reanimated'in entering/layout
+// animasyonları burada denendi ama Modal portalının içinde kayıt olamayıp
+// başlangıç durumunda donuyorlardı (sayfa ekran dışında, opacity 0 kalıyordu).
 //
-// Çıkış animasyonunun oynayabilmesi için Modal, içerik sökülürken bir süre daha
-// ayakta kalmalı: `mounted` bunun için, `visible` kapanınca EXIT_MS sonra iniyor.
+// Açılışın TEK parça olması sayfanın boyunun sabit olmasına bağlı: içerikten boy
+// alan bir sayfa, verisi async geldiği için önce kısa hâliyle kayar, sonra boy
+// değiştirirdi — "önce az açılıp sonra tamamlanma" hissi buradan gelir. Bu yüzden
+// bu kabuğu kullanan sayfalar kendi stillerinde sabit yükseklik verir; buradaki
+// ölçüm de bir kez oturur ve kaymanın mesafesini belirler.
 const ENTER_MS = 260;
 const EXIT_MS = 180;
 
@@ -36,49 +39,63 @@ export function BottomSheet({
 }: {
   visible: boolean;
   onClose: () => void;
-  /** Sayfanın kendi görünümü (zemin, köşe, dolgu) — her ekran kendi stilini verir. */
+  /** Sayfanın kendi görünümü (zemin, köşe, dolgu, sabit yükseklik). */
   style?: StyleProp<ViewStyle>;
   children: ReactNode;
 }) {
   const [mounted, setMounted] = useState(visible);
+  const [height, setHeight] = useState(0);
+  const progress = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (visible) {
       setMounted(true);
       return;
     }
-    const id = setTimeout(() => setMounted(false), EXIT_MS);
-    return () => clearTimeout(id);
-  }, [visible]);
+    Animated.timing(progress, {
+      toValue: 0,
+      duration: EXIT_MS,
+      easing: Easing.in(Easing.cubic),
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) setMounted(false);
+    });
+  }, [visible, progress]);
+
+  // Açılış ölçüm oturduktan sonra başlar: mesafe yanlış hesaplanıp sayfa yarı
+  // yoldan gelmiş gibi görünmesin.
+  useEffect(() => {
+    if (!visible || !mounted || height <= 0) return;
+    Animated.timing(progress, {
+      toValue: 1,
+      duration: ENTER_MS,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [visible, mounted, height, progress]);
 
   if (!mounted) return null;
+
+  // Ölçüm gelmeden önceki ilk karede mesafe bilinmiyor; 0 verilseydi sayfa o
+  // karede son konumunda görünüp sonra aşağı atlardı. Bir ekran boyu aşağıda
+  // başlatmak bu kareyi de ekran dışında tutuyor.
+  const translateY = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [height || Dimensions.get('window').height, 0],
+  });
 
   return (
     <Modal visible transparent animationType="none" onRequestClose={onClose}>
       <View style={styles.root}>
-        {visible ? (
-          <>
-            <Animated.View
-              entering={FadeIn.duration(ENTER_MS)}
-              exiting={FadeOut.duration(EXIT_MS)}
-              style={styles.backdrop}
-            >
-              <Pressable
-                style={StyleSheet.absoluteFill}
-                onPress={onClose}
-                accessibilityRole="button"
-              />
-            </Animated.View>
-            <Animated.View
-              entering={SlideInDown.duration(ENTER_MS).easing(Easing.out(Easing.cubic))}
-              exiting={SlideOutDown.duration(EXIT_MS).easing(Easing.in(Easing.cubic))}
-              layout={LinearTransition.duration(ENTER_MS).easing(Easing.out(Easing.cubic))}
-              style={style}
-            >
-              {children}
-            </Animated.View>
-          </>
-        ) : null}
+        <Animated.View style={[styles.backdrop, { opacity: progress }]}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityRole="button" />
+        </Animated.View>
+        <Animated.View
+          onLayout={(e) => setHeight(e.nativeEvent.layout.height)}
+          style={[style, { transform: [{ translateY }] }]}
+        >
+          {children}
+        </Animated.View>
       </View>
     </Modal>
   );
