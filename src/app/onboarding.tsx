@@ -114,7 +114,7 @@ export default function Onboarding() {
         <Animated.View key={step} entering={FadeInDown.duration(280)} style={styles.step}>
           {step === 'manifesto' && (
             <>
-              <Wordmark height={26} style={styles.wordmark} />
+              <Wordmark height={34} style={styles.wordmark} />
               <Text style={styles.headline}>{T.manifestoHeadline}</Text>
               <Text style={[t.body, { color: colors.secondary, lineHeight: 24 }]}>
                 {T.manifestoBody}

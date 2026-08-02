@@ -36,7 +36,7 @@ export function ProjectSwitcher() {
         accessibilityLabel={T.projectPickerTitle}
         style={({ pressed }) => [styles.pill, pressed && { opacity: 0.75 }]}
       >
-        <Text style={[t.caption, { color: colors.secondary }]} numberOfLines={1}>
+        <Text style={[t.caption, { color: colors.secondary, flexShrink: 1 }]} numberOfLines={1}>
           {activeLabel}
         </Text>
         <Text style={[t.caption, { color: colors.tertiary }]}>▾</Text>
@@ -93,6 +93,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    // Uzun proje adı + logo üst satırı taşırmasın: hap kısalır, etiket üç noktaya düşer.
+    flexShrink: 1,
     maxWidth: 220,
     borderRadius: 999,
     borderWidth: 1,

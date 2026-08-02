@@ -198,7 +198,7 @@ export default function Settings() {
 
       <View style={styles.footer}>
         <View style={styles.footerBrand}>
-          <Wordmark height={13} />
+          <Wordmark height={16} />
           <Text style={t.caption}>v{Constants.expoConfig?.version ?? '1.0.0'}</Text>
         </View>
         <Pressable onPress={() => Linking.openURL(GITHUB_URL)} hitSlop={8}>
