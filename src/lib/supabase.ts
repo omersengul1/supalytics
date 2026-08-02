@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { AppState, type NativeEventSubscription } from 'react-native';
 
 import { T } from './i18n';
 import {
@@ -11,6 +12,23 @@ import {
 
 let client: SupabaseClient | null = null;
 let clientSig: string | null = null;
+let appStateSub: NativeEventSubscription | null = null;
+
+// autoRefreshToken tek başına yetmiyor: yenileme döngüsü bir JS zamanlayıcısı ve
+// uygulama arka plandayken çalışmıyor. Supabase, React Native'de bunu AppState'e
+// bağlamayı söylüyor — öne gelince başlat, arka plana düşünce durdur.
+// startAutoRefresh ilk tick'i hemen atar, yani uzun aradan sonra uygulamaya
+// dönüldüğünde bayat token daha ilk istek gitmeden tazelenir.
+// Dinleyici modüldeki `client` değişkenini okur; proje değişip client yenilense
+// bile hep güncel olana uygular, o yüzden bir kez bağlanması yeterli.
+function bindAutoRefreshToAppState(): void {
+  if (appStateSub) return;
+  appStateSub = AppState.addEventListener('change', (state) => {
+    if (!client) return;
+    if (state === 'active') client.auth.startAutoRefresh().catch(() => {});
+    else client.auth.stopAutoRefresh().catch(() => {});
+  });
+}
 
 /** "https://xyz.supabase.co/" → doğrulanmış, sondaki / kırpılmış URL. */
 export function normalizeProjectUrl(input: string): string {
@@ -90,6 +108,10 @@ export function createClientForProject(projectId: string, creds: Credentials): S
       detectSessionInUrl: false,
     },
   });
+  bindAutoRefreshToAppState();
+  // Client uygulama önplandayken kurulduysa döngüyü hemen başlat: AppState
+  // 'change' yayınlamaz, yalnızca durum değiştiğinde tetiklenir.
+  if (AppState.currentState === 'active') client.auth.startAutoRefresh().catch(() => {});
   return client;
 }
 

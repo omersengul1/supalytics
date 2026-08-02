@@ -46,9 +46,26 @@ function demo<T>(value: T): Promise<T> {
   return new Promise((resolve) => setTimeout(() => resolve(value), 220));
 }
 
+// PostgREST süresi dolmuş/geçersiz JWT'yi PGRST301 ile döndürür; sürüme göre
+// mesaj metni de değişebildiği için ikisine birden bakıyoruz.
+function isExpiredSession(error: { code?: string; message: string }): boolean {
+  return error.code === 'PGRST301' || /jwt expired|jwt is expired|invalid claim/i.test(error.message);
+}
+
 async function rpc<T>(fn: string, args?: Record<string, unknown>): Promise<T> {
   const supabase = await getClient();
-  const { data, error } = await supabase.rpc(fn, args);
+  let { data, error } = await supabase.rpc(fn, args);
+
+  // Auto-refresh döngüsü arayı kaçırmış olabilir (cihaz uzun süre kapalı kaldı,
+  // uygulama arka planda öldürüldü…). Ham "JWT expired" göstermek yerine bir kez
+  // yenileyip çağrıyı tekrarla; yenileme de tutmuyorsa oturum gerçekten bitmiştir.
+  if (error && isExpiredSession(error)) {
+    const { error: refreshError } = await supabase.auth.refreshSession();
+    if (refreshError) throw new Error(T.errSessionExpired);
+    ({ data, error } = await supabase.rpc(fn, args));
+    if (error && isExpiredSession(error)) throw new Error(T.errSessionExpired);
+  }
+
   if (error) {
     // Ham PostgREST/Postgres mesajlarını yol gösteren metinlere çevir.
     if (error.code === 'PGRST202' || /could not find the function/i.test(error.message)) {

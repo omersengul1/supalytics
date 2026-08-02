@@ -41,6 +41,8 @@ const tr = {
 
   // ---- hatalar ----
   errNoConnection: 'Supabase bağlantısı bulunamadı.',
+  errSessionExpired:
+    'Oturumun süresi doldu ve yenilenemedi. Ayarlar’dan projeyi yeniden bağlaman gerekiyor.',
   errEmptyTotals: 'supalytics_totals boş döndü.',
   errFetchGeneric: 'Veriler alınamadı.',
   errUsersFetch: 'Kullanıcılar alınamadı.',
@@ -356,6 +358,8 @@ const en: Strings = {
   },
 
   errNoConnection: 'No Supabase connection found.',
+  errSessionExpired:
+    'Your session expired and could not be refreshed. Reconnect the project from Settings.',
   errEmptyTotals: 'supalytics_totals returned empty.',
   errFetchGeneric: 'Could not load data.',
   errUsersFetch: 'Could not load users.',
