@@ -269,7 +269,7 @@ export default function Overview() {
       }
     >
       <View style={styles.topRow}>
-        <Wordmark height={26} />
+        <Wordmark height={34} />
         <ProjectSwitcher />
       </View>
 
