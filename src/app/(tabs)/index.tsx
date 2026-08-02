@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Avatar } from '@/components/avatar';
 import { CohortSheet } from '@/components/cohort-sheet';
 import { MetricCard } from '@/components/metric-card';
+import { MetricEditorSheet } from '@/components/metric-editor-sheet';
 import { UserProfileSheet } from '@/components/user-profile-sheet';
 import { ProjectSwitcher } from '@/components/project-switcher';
 import { PulseDot } from '@/components/pulse-dot';
@@ -28,6 +29,7 @@ import {
   providerLabel,
   timeAgo,
 } from '@/lib/format';
+import { metricsForCards, type CardId } from '@/lib/cards';
 import { T } from '@/lib/i18n';
 import { usePrefs } from '@/lib/prefs-context';
 import { colors, radius, type as t, useTheme } from '@/lib/theme';
@@ -58,8 +60,11 @@ export default function Overview() {
   const [error, setError] = useState<string | null>(null);
   const [cohort, setCohort] = useState<CohortKey | null>(null);
   const [profile, setProfile] = useState<ProfileTarget | null>(null);
+  const [editing, setEditing] = useState(false);
 
-  const metricSet = useMemo(() => new Set(prefs.metrics), [prefs.metrics]);
+  // Hangi verinin çekileceği görünen kartlardan türetilir: kapalı bir kartın
+  // RPC'si hiç çağrılmaz (kurulumda o metriğin SQL'i atlanmış olabilir).
+  const metricSet = useMemo(() => new Set(metricsForCards(prefs.cards)), [prefs.cards]);
 
   // Yalnızca seçili metriklerin verisi çekilir: seçilmeyen metrik, kurulumda
   // SQL'i atlanmış olabilir — boşuna RPC hatası üretmeyelim.
@@ -119,30 +124,42 @@ export default function Overview() {
   // Hero seçime uyar: aktiflik izlenmiyorsa toplam kullanıcı gösterilir.
   const heroIsActive = metricSet.has('active');
 
-  const cards = useMemo(() => {
-    const list: React.ReactNode[] = [];
+  // Her kart kendi kimliğiyle ayrı bir düğüm; hangisinin çizileceğini ve hangi
+  // sırayla çizileceğini prefs.cards belirler. Hepsi tek bir saran kaba akıyor:
+  // yarım kartlar kendiliğinden eşleşiyor, tam genişlikte olanlar (grafikli kart
+  // ve listeler) kendi satırını alıyor — yani kullanıcı sırayı değiştirdiğinde
+  // düzen kendini yeniden topluyor, boş yer kalmıyor.
+  const cardNodes = useMemo(() => {
+    const map: Partial<Record<CardId, React.ReactNode>> = {};
     const topProvider = [...providers].sort((a, b) => b.users - a.users)[0];
     const providerTotal = providers.reduce((sum, p) => sum + p.users, 0);
     const topDevice = [...devices].sort((a, b) => b.sessions - a.sessions)[0];
     const sessionTotal = devices.reduce((sum, d) => sum + d.sessions, 0);
     const signupTotal = signups.reduce((sum, p) => sum + p.users, 0);
 
-    const activeCards = metricSet.has('active') && totals && (
-      <View key="active" style={styles.gridRowGroup}>
+    if (totals) {
+      map.weeklyActive = (
         <MetricCard
+          key="weeklyActive"
           style={styles.half}
           label={T.cardWeeklyActive}
           value={compact(totals.wau)}
           sub={T.cardMonthSub(compact(totals.mau))}
           onPress={() => setCohort('wau')}
         />
+      );
+      map.engagement = (
         <MetricCard
+          key="engagement"
           style={styles.half}
           label={T.cardEngagement}
           value={totals.mau > 0 ? `${Math.round((totals.dau / totals.mau) * 100)}%` : '—'}
           sub={T.cardEngagementSub}
         />
+      );
+      map.onlineNow = (
         <MetricCard
+          key="onlineNow"
           style={styles.half}
           label={T.cardOnlineNow}
           value={compact(totals.online_now)}
@@ -150,19 +167,20 @@ export default function Overview() {
           subTone="accent"
           onPress={() => setCohort('online')}
         />
+      );
+      map.loginsToday = (
         <MetricCard
+          key="loginsToday"
           style={styles.half}
           label={T.cardLoginsToday}
           value={compact(totals.logins_today)}
           sub={T.cardLoginsTodaySub}
           onPress={() => setCohort('logins')}
         />
-      </View>
-    );
-
-    const signupCards = metricSet.has('signups') && totals && (
-      <View key="signups" style={styles.gridRowGroup}>
+      );
+      map.signups30 = (
         <MetricCard
+          key="signups30"
           style={styles.full}
           label={T.cardSignups30}
           value={compact(signupTotal)}
@@ -172,81 +190,140 @@ export default function Overview() {
         >
           <Sparkline data={signups.map((p) => p.users)} height={56} />
         </MetricCard>
+      );
+      map.totalUsers = (
         <MetricCard
+          key="totalUsers"
           style={styles.half}
           label={T.cardTotalUsers}
           value={compact(totals.total_users)}
           sub={T.cardTotalUsersSub}
         />
+      );
+      map.growth = (
         <MetricCard
+          key="growth"
           style={styles.half}
           label={T.cardGrowth}
           value={growth === null ? '—' : `${growth >= 0 ? '+' : ''}${growth}%`}
           sub={T.cardGrowthSub(compact(totals.new_week), compact(totals.new_prev_week))}
           subTone={growth !== null && growth < 0 ? 'danger' : 'accent'}
         />
+      );
+      map.unconfirmed = (
         <MetricCard
+          key="unconfirmed"
           style={styles.half}
           label={T.cardUnconfirmed}
           value={compact(totals.unconfirmed_users)}
           sub={T.cardUnconfirmedSub}
         />
+      );
+      map.mfa = (
         <MetricCard
+          key="mfa"
           style={styles.half}
           label={T.cardMfa}
           value={compact(totals.mfa_users)}
           sub={T.cardMfaSub}
         />
-      </View>
-    );
-
-    const sessionCards = metricSet.has('sessions') && totals && (
-      <View key="sessions" style={styles.gridRowGroup}>
+      );
+      map.openSessions = (
         <MetricCard
+          key="openSessions"
           style={styles.half}
           label={T.cardOpenSessions}
           value={compact(totals.open_sessions)}
           sub={T.cardOpenSessionsSub}
         />
+      );
+      map.sessionCount = (
         <MetricCard
+          key="sessionCount"
           style={styles.half}
           label={T.cardSessions}
           value={compact(sessionTotal)}
           sub={T.cardSessionsSub}
         />
-      </View>
-    );
+      );
+    }
 
-    const providerCard = metricSet.has('providers') && topProvider && providerTotal > 0 && (
-      <MetricCard
-        key="providers"
-        style={styles.half}
-        label={T.cardTopProvider}
-        value={`${Math.round((topProvider.users / providerTotal) * 100)}%`}
-        sub={providerLabel(topProvider.provider)}
-      />
-    );
+    if (topProvider && providerTotal > 0)
+      map.topProvider = (
+        <MetricCard
+          key="topProvider"
+          style={styles.half}
+          label={T.cardTopProvider}
+          value={`${Math.round((topProvider.users / providerTotal) * 100)}%`}
+          sub={providerLabel(topProvider.provider)}
+        />
+      );
 
-    const deviceCard = metricSet.has('devices') && topDevice && sessionTotal > 0 && (
-      <MetricCard
-        key="devices"
-        style={styles.half}
-        label={T.cardTopDevice}
-        value={`${Math.round((topDevice.sessions / sessionTotal) * 100)}%`}
-        sub={deviceLabel(topDevice.device)}
-      />
-    );
+    if (topDevice && sessionTotal > 0)
+      map.topDevice = (
+        <MetricCard
+          key="topDevice"
+          style={styles.half}
+          label={T.cardTopDevice}
+          value={`${Math.round((topDevice.sessions / sessionTotal) * 100)}%`}
+          sub={deviceLabel(topDevice.device)}
+        />
+      );
 
-    const tail = (providerCard || deviceCard) && (
-      <View key="tail" style={styles.gridRowGroup}>
-        {providerCard}
-        {deviceCard}
-      </View>
-    );
+    if (topUsers.length > 0)
+      map.topUsers = (
+        <View key="topUsers" style={[styles.listCard, styles.fullBlock]}>
+          <Text style={[t.label, styles.listTitle]}>{T.topUsersTitle}</Text>
+          {topUsers.map((u, i) => (
+            <Pressable
+              key={u.user_id}
+              onPress={() =>
+                setProfile({ id: u.user_id, email: u.email, name: u.name, avatar_url: u.avatar_url })
+              }
+              style={({ pressed }) => [
+                styles.listRow,
+                i === 0 && { borderTopWidth: 0 },
+                pressed && { opacity: 0.7 },
+              ]}
+            >
+              <Avatar url={u.avatar_url} seed={u.name ?? u.email ?? '?'} size={34} />
+              <View style={{ flex: 1, gap: 1 }}>
+                <Text style={[t.body, { fontSize: 14 }]} numberOfLines={1}>
+                  {u.name ?? u.email ?? T.unknownUser}
+                </Text>
+                <Text style={t.caption} numberOfLines={1}>
+                  {T.lastSeen(timeAgo(u.last_seen))}
+                </Text>
+              </View>
+              <Text style={[t.caption, { color: accentColor, fontWeight: '700' }]}>
+                {T.topUserEvents(compact(u.events))}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      );
 
-    list.push(activeCards, signupCards, sessionCards, tail);
-    return list;
-  }, [metricSet, totals, signups, providers, devices, growth]);
+    if (activity.length > 0)
+      map.activity = (
+        <View key="activity" style={[styles.listCard, styles.fullBlock]}>
+          <Text style={[t.label, styles.listTitle]}>{T.activityTitle}</Text>
+          {activity.map((row, i) => (
+            <View key={i} style={[styles.listRow, i === 0 && { borderTopWidth: 0 }]}>
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={[t.body, { fontSize: 14 }]} numberOfLines={1}>
+                  {row.email ?? T.unknownUser}
+                </Text>
+                <Text style={t.caption} numberOfLines={1}>
+                  {actionLabel(row.action)} · {deviceLabel(row.device)} · {timeAgo(row.created_at)}
+                </Text>
+              </View>
+            </View>
+          ))}
+        </View>
+      );
+
+    return map;
+  }, [totals, signups, providers, devices, growth, topUsers, activity, accentColor]);
 
   return (
     <ScrollView
@@ -307,60 +384,26 @@ export default function Overview() {
         </Text>
       ) : null}
 
-      {cards}
+      <View style={styles.editRow}>
+        <Text style={[t.label, styles.editTitle]}>{T.metricsSectionTitle}</Text>
+        <Pressable
+          onPress={() => setEditing(true)}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={T.editMetricsTitle}
+          style={({ pressed }) => [styles.editButton, pressed && { opacity: 0.7 }]}
+        >
+          <Text style={[t.caption, { color: accentColor, fontWeight: '700' }]}>
+            {T.editMetrics}
+          </Text>
+        </Pressable>
+      </View>
 
-      {metricSet.has('active') && topUsers.length > 0 ? (
-        <View style={styles.listCard}>
-          <Text style={[t.label, styles.listTitle]}>{T.topUsersTitle}</Text>
-          {topUsers.map((u, i) => (
-            <Pressable
-              key={u.user_id}
-              onPress={() =>
-                setProfile({ id: u.user_id, email: u.email, name: u.name, avatar_url: u.avatar_url })
-              }
-              style={({ pressed }) => [
-                styles.listRow,
-                i === 0 && { borderTopWidth: 0 },
-                pressed && { opacity: 0.7 },
-              ]}
-            >
-              <Avatar url={u.avatar_url} seed={u.name ?? u.email ?? '?'} size={34} />
-              <View style={{ flex: 1, gap: 1 }}>
-                <Text style={[t.body, { fontSize: 14 }]} numberOfLines={1}>
-                  {u.name ?? u.email ?? T.unknownUser}
-                </Text>
-                <Text style={t.caption} numberOfLines={1}>
-                  {T.lastSeen(timeAgo(u.last_seen))}
-                </Text>
-              </View>
-              <Text style={[t.caption, { color: accentColor, fontWeight: '700' }]}>
-                {T.topUserEvents(compact(u.events))}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-      ) : null}
-
-      {metricSet.has('activity') && activity.length > 0 ? (
-        <View style={[styles.listCard, { marginTop: 12 }]}>
-          <Text style={[t.label, styles.listTitle]}>{T.activityTitle}</Text>
-          {activity.map((row, i) => (
-            <View key={i} style={[styles.listRow, i === 0 && { borderTopWidth: 0 }]}>
-              <View style={{ flex: 1, gap: 2 }}>
-                <Text style={[t.body, { fontSize: 14 }]} numberOfLines={1}>
-                  {row.email ?? T.unknownUser}
-                </Text>
-                <Text style={t.caption} numberOfLines={1}>
-                  {actionLabel(row.action)} · {deviceLabel(row.device)} · {timeAgo(row.created_at)}
-                </Text>
-              </View>
-            </View>
-          ))}
-        </View>
-      ) : null}
+      <View style={styles.grid}>{prefs.cards.map((id) => cardNodes[id] ?? null)}</View>
 
       <CohortSheet cohort={cohort} onClose={() => setCohort(null)} />
       <UserProfileSheet target={profile} onClose={() => setProfile(null)} />
+      <MetricEditorSheet visible={editing} onClose={() => setEditing(false)} />
     </ScrollView>
   );
 }
@@ -391,11 +434,32 @@ const styles = StyleSheet.create({
   heroLabel: {
     letterSpacing: 1.2,
   },
-  gridRowGroup: {
+  editRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  editTitle: {
+    letterSpacing: 0.8,
+  },
+  editButton: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    backgroundColor: colors.surfaceGlass,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  // Tüm metrik blokları tek saran kapta akar: yarım kartlar eşleşir, tam
+  // genişlikte olanlar (grafikli kart, listeler) kendi satırını alır.
+  grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
-    marginBottom: 12,
+  },
+  fullBlock: {
+    flexBasis: '100%',
   },
   half: {
     flexBasis: '47%',

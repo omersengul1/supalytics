@@ -318,6 +318,16 @@ const tr = {
   securityNote:
     'Bağlantı bilgileriniz ve oturumunuz yalnızca bu cihazın Keychain/Keystore’unda durur; verileriniz cihazınızdan çıkmaz.',
   secMetrics: 'ÖZETTE GÖSTER',
+
+  // ---- özet metrik düzenleyici ----
+  metricsSectionTitle: 'METRİKLER',
+  editMetrics: 'Düzenle',
+  editMetricsTitle: 'Metrikleri düzenle',
+  editMetricsHint: 'Tutamaçtan sürükleyerek sırala, görmek istemediğin kartı kapat.',
+  metricsHiddenTitle: 'GİZLİ',
+  metricsLastOne: 'En az bir kart açık kalmalı.',
+  dragToReorder: 'sürükleyerek sırala',
+  done: 'Bitti',
   secProjects: 'PROJELER',
   secAppearance: 'GÖRÜNÜM',
   sqlModalTitle: 'Kurulum SQL’i',
@@ -619,6 +629,15 @@ const en: Strings = {
   securityNote:
     'Your connection details and session live only in this device’s Keychain/Keystore; your data never leaves your device.',
   secMetrics: 'SHOW ON OVERVIEW',
+
+  metricsSectionTitle: 'METRICS',
+  editMetrics: 'Edit',
+  editMetricsTitle: 'Edit metrics',
+  editMetricsHint: 'Drag the handle to reorder, switch off any card you do not want.',
+  metricsHiddenTitle: 'HIDDEN',
+  metricsLastOne: 'At least one card must stay on.',
+  dragToReorder: 'drag to reorder',
+  done: 'Done',
   secProjects: 'PROJECTS',
   secAppearance: 'APPEARANCE',
   sqlModalTitle: 'Setup SQL',

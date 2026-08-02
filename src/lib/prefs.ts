@@ -1,5 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 
+import { cardsFromMetrics, DEFAULT_CARD_ORDER, isCardId, type CardId } from './cards';
 import type { AccentKey } from './theme';
 
 const PREFS_KEY = 'supalytics.prefs';
@@ -24,6 +25,9 @@ export interface Prefs {
   setupDone: boolean;
   demoMode: boolean;
   metrics: MetricKey[];
+  /** Özetteki kartlar: dizide olmak = görünür, dizideki yer = sıra. Özetin tek
+   *  doğruluk kaynağı budur; metrics ondan türetilir. */
+  cards: CardId[];
   accent: AccentKey;
   biometricLock: boolean;
   projects: ProjectRef[];
@@ -34,11 +38,23 @@ export const defaultPrefs: Prefs = {
   setupDone: false,
   demoMode: false,
   metrics: ['active', 'signups', 'providers', 'devices', 'sessions', 'activity'],
+  cards: DEFAULT_CARD_ORDER,
   accent: 'supabase',
   biometricLock: false,
   projects: [],
   activeProjectId: null,
 };
+
+/** Diskten gelen kart listesini temizler: tanınmayan/yinelenen kimlikleri atar,
+ *  hiç kart tercihi yoksa eski metrics seçiminden türetir. */
+function normalizeCards(stored: Partial<Prefs>): CardId[] {
+  if (!Array.isArray(stored.cards)) {
+    return cardsFromMetrics(stored.metrics ?? defaultPrefs.metrics);
+  }
+  const seen = new Set<CardId>();
+  for (const id of stored.cards) if (isCardId(id)) seen.add(id);
+  return [...seen];
+}
 
 export interface Credentials {
   url: string;
@@ -75,6 +91,8 @@ export async function loadPrefs(): Promise<Prefs> {
     // SecureStore bozuksa (ör. Expo Go eski versiyonu) varsayılanları kullan
   }
   let merged = prefs ?? defaultPrefs;
+  // Kart tercihi bu sürümle geldi: eski kayıtlarda yok, metrics'ten türetilir.
+  merged = { ...merged, cards: normalizeCards(merged) };
 
   // Eski sürümlerin tam-host etiketleri kısaltılır (bir kez). Kullanıcının
   // verdiği özel adlar ".supabase.co" ile bitmeyeceği için etkilenmez.

@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Field, PrimaryButton } from '@/components/form';
 import { SetupGuide } from '@/components/setup-guide';
 import { Wordmark } from '@/components/wordmark';
+import { cardsFromMetrics } from '@/lib/cards';
 import { T } from '@/lib/i18n';
 import { usePrefs } from '@/lib/prefs-context';
 import type { MetricKey } from '@/lib/prefs';
@@ -93,7 +94,9 @@ export default function Onboarding() {
 
   const finish = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    update({ setupDone: true, demoMode: mode === 'demo', metrics });
+    // Seçilen metrikler özetin kart listesine çevrilir: sırayı/görünürlüğü
+    // bundan sonra kullanıcı özetteki düzenleyiciden yönetir.
+    update({ setupDone: true, demoMode: mode === 'demo', metrics, cards: cardsFromMetrics(metrics) });
   };
 
   return (

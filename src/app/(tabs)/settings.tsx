@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { SetupGuide } from '@/components/setup-guide';
 import { Wordmark } from '@/components/wordmark';
+import { CARD_SOURCE, DEFAULT_CARD_ORDER, metricsForCards } from '@/lib/cards';
 import { T } from '@/lib/i18n';
 import { wipeEverything, type MetricKey } from '@/lib/prefs';
 import { usePrefs } from '@/lib/prefs-context';
@@ -91,12 +92,19 @@ export default function Settings() {
     }
   };
 
+  // Buradaki anahtarlar grup düzeyinde çalışır; özetteki asıl doğruluk kaynağı
+  // prefs.cards olduğu için grubun kartları eklenip çıkarılır, metrics de
+  // ondan türetilir. Özetteki düzenleyiciyle bu yüzden hiç ayrışmazlar.
   const toggleMetric = (key: MetricKey, enabled: boolean) => {
-    if (!enabled && prefs.metrics.length === 1 && prefs.metrics.includes(key)) return; // sonuncu kapanmaz
+    const rest = prefs.cards.filter((id) => CARD_SOURCE[id] !== key);
+    if (!enabled && rest.length === 0) return; // sonuncu grup kapanmaz
     Haptics.selectionAsync();
-    update({
-      metrics: enabled ? [...prefs.metrics, key] : prefs.metrics.filter((m) => m !== key),
-    });
+    const cards = enabled
+      ? DEFAULT_CARD_ORDER.filter(
+          (id) => prefs.cards.includes(id) || CARD_SOURCE[id] === key,
+        )
+      : rest;
+    update({ cards, metrics: metricsForCards(cards) });
   };
 
   return (
