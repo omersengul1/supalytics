@@ -204,8 +204,10 @@ const tr = {
   cardSessionsSub: '30 günde',
   cardOnlineNow: 'Şu an çevrimiçi',
   cardOnlineNowSub: 'son 15 dk · sen hariç',
-  cardLoginsToday: 'Bugün aktif',
-  cardLoginsTodaySub: 'oturum açma sayısı',
+  // Hero "bugün aktif" benzersiz KİŞİ sayar; bu kart bugünkü GİRİŞ sayısını
+  // sayar (aynı kişi birden çok kez sayılabilir). Adlar bu ayrımı taşımalı.
+  cardLoginsToday: 'Girişler',
+  cardLoginsTodaySub: 'bugün · oturum açma',
   cardOpenSessions: 'Açık oturumlar',
   cardOpenSessionsSub: 'tüm cihazlarda etkin',
   cardGrowth: 'Haftalık büyüme',
@@ -520,8 +522,8 @@ const en: Strings = {
   cardSessionsSub: 'in 30 days',
   cardOnlineNow: 'Online now',
   cardOnlineNowSub: 'last 15 min · excluding you',
-  cardLoginsToday: 'Active today',
-  cardLoginsTodaySub: 'sign-in count',
+  cardLoginsToday: 'Sign-ins',
+  cardLoginsTodaySub: 'today · sign-in count',
   cardOpenSessions: 'Open sessions',
   cardOpenSessionsSub: 'active across devices',
   cardGrowth: 'Weekly growth',
