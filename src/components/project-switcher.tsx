@@ -1,9 +1,10 @@
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { BottomSheet } from '@/components/bottom-sheet';
 import { T } from '@/lib/i18n';
 import { usePrefs } from '@/lib/prefs-context';
 import { colors, radius, type as t, useTheme } from '@/lib/theme';
@@ -42,48 +43,49 @@ export function ProjectSwitcher() {
         <Text style={[t.caption, { color: colors.tertiary }]}>▾</Text>
       </Pressable>
 
-      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
-        <Pressable style={styles.backdrop} onPress={() => setOpen(false)} />
-        <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
-          <View style={styles.grabber} />
-          <Text style={[t.label, styles.sheetTitle]}>{T.projectPickerTitle}</Text>
+      <BottomSheet
+        visible={open}
+        onClose={() => setOpen(false)}
+        style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}
+      >
+        <View style={styles.grabber} />
+        <Text style={[t.label, styles.sheetTitle]}>{T.projectPickerTitle}</Text>
 
-          {prefs.projects.map((p) => {
-            const active = !prefs.demoMode && p.id === prefs.activeProjectId;
-            return (
-              <Pressable
-                key={p.id}
-                onPress={() => pick(() => switchProject(p.id))}
-                style={({ pressed }) => [styles.row, pressed && { opacity: 0.7 }]}
-              >
-                <View style={[styles.dot, { backgroundColor: active ? accentColor : colors.elevated }]} />
-                <Text style={[t.body, { fontSize: 15, flex: 1 }]} numberOfLines={1}>
-                  {p.label}
-                </Text>
-                {active ? <Text style={[t.caption, { color: accentColor }]}>✓</Text> : null}
-              </Pressable>
-            );
-          })}
+        {prefs.projects.map((p) => {
+          const active = !prefs.demoMode && p.id === prefs.activeProjectId;
+          return (
+            <Pressable
+              key={p.id}
+              onPress={() => pick(() => switchProject(p.id))}
+              style={({ pressed }) => [styles.row, pressed && { opacity: 0.7 }]}
+            >
+              <View style={[styles.dot, { backgroundColor: active ? accentColor : colors.elevated }]} />
+              <Text style={[t.body, { fontSize: 15, flex: 1 }]} numberOfLines={1}>
+                {p.label}
+              </Text>
+              {active ? <Text style={[t.caption, { color: accentColor }]}>✓</Text> : null}
+            </Pressable>
+          );
+        })}
 
-          <Pressable
-            onPress={() => pick(switchToDemo)}
-            style={({ pressed }) => [styles.row, pressed && { opacity: 0.7 }]}
-          >
-            <View style={[styles.dot, { backgroundColor: prefs.demoMode ? accentColor : colors.elevated }]} />
-            <Text style={[t.body, { fontSize: 15, flex: 1 }]}>{T.projectDemo}</Text>
-            {prefs.demoMode ? <Text style={[t.caption, { color: accentColor }]}>✓</Text> : null}
-          </Pressable>
+        <Pressable
+          onPress={() => pick(switchToDemo)}
+          style={({ pressed }) => [styles.row, pressed && { opacity: 0.7 }]}
+        >
+          <View style={[styles.dot, { backgroundColor: prefs.demoMode ? accentColor : colors.elevated }]} />
+          <Text style={[t.body, { fontSize: 15, flex: 1 }]}>{T.projectDemo}</Text>
+          {prefs.demoMode ? <Text style={[t.caption, { color: accentColor }]}>✓</Text> : null}
+        </Pressable>
 
-          <Pressable
-            onPress={() => pick(() => router.push('/add-project'))}
-            style={({ pressed }) => [styles.row, styles.addRow, pressed && { opacity: 0.7 }]}
-          >
-            <Text style={[t.body, { color: accentColor, fontSize: 15, fontWeight: '600' }]}>
-              ＋ {T.projectAdd}
-            </Text>
-          </Pressable>
-        </View>
-      </Modal>
+        <Pressable
+          onPress={() => pick(() => router.push('/add-project'))}
+          style={({ pressed }) => [styles.row, styles.addRow, pressed && { opacity: 0.7 }]}
+        >
+          <Text style={[t.body, { color: accentColor, fontSize: 15, fontWeight: '600' }]}>
+            ＋ {T.projectAdd}
+          </Text>
+        </Pressable>
+      </BottomSheet>
     </>
   );
 }
@@ -102,10 +104,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceGlass,
     paddingHorizontal: 12,
     paddingVertical: 6,
-  },
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
   },
   sheet: {
     backgroundColor: colors.surface,

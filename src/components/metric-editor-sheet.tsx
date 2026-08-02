@@ -2,7 +2,6 @@ import * as Haptics from 'expo-haptics';
 import { useEffect, useRef, useState } from 'react';
 import {
   Animated,
-  Modal,
   PanResponder,
   Pressable,
   ScrollView,
@@ -13,6 +12,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { BottomSheet } from '@/components/bottom-sheet';
 import { cardLabel, DEFAULT_CARD_ORDER, metricsForCards, type CardId } from '@/lib/cards';
 import { T } from '@/lib/i18n';
 import { usePrefs } from '@/lib/prefs-context';
@@ -101,80 +101,81 @@ export function MetricEditorSheet({ visible, onClose }: { visible: boolean; onCl
   const hidden = DEFAULT_CARD_ORDER.filter((id) => !order.includes(id));
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose} />
-      <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
-        <View style={styles.grabber} />
-        <View style={styles.headRow}>
-          <Text style={t.title}>{T.editMetricsTitle}</Text>
-          <Pressable onPress={onClose} hitSlop={10} accessibilityRole="button">
-            <Text style={[t.label, { color: accentColor }]}>{T.done}</Text>
-          </Pressable>
-        </View>
-        <Text style={[t.caption, styles.hint]}>{T.editMetricsHint}</Text>
+    <BottomSheet
+      visible={visible}
+      onClose={onClose}
+      style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}
+    >
+      <View style={styles.grabber} />
+      <View style={styles.headRow}>
+        <Text style={t.title}>{T.editMetricsTitle}</Text>
+        <Pressable onPress={onClose} hitSlop={10} accessibilityRole="button">
+          <Text style={[t.label, { color: accentColor }]}>{T.done}</Text>
+        </Pressable>
+      </View>
+      <Text style={[t.caption, styles.hint]}>{T.editMetricsHint}</Text>
 
-        <ScrollView
-          style={styles.list}
-          scrollEnabled={dragIndex === null}
-          showsVerticalScrollIndicator={false}
-        >
-          {order.map((id, i) => {
-            const dragging = dragIndex === i;
-            return (
-              <Animated.View
-                key={id}
-                style={[
-                  styles.row,
-                  dragging && styles.rowDragging,
-                  dragging && { transform: [{ translateY: offset }] },
-                ]}
-              >
-                <DragHandle
-                  onGrant={() => grant(i)}
-                  onMove={move}
-                  onRelease={release}
-                  label={cardLabel(id)}
-                />
-                <Text style={[t.body, styles.rowLabel]} numberOfLines={1}>
+      <ScrollView
+        style={styles.list}
+        scrollEnabled={dragIndex === null}
+        showsVerticalScrollIndicator={false}
+      >
+        {order.map((id, i) => {
+          const dragging = dragIndex === i;
+          return (
+            <Animated.View
+              key={id}
+              style={[
+                styles.row,
+                dragging && styles.rowDragging,
+                dragging && { transform: [{ translateY: offset }] },
+              ]}
+            >
+              <DragHandle
+                onGrant={() => grant(i)}
+                onMove={move}
+                onRelease={release}
+                label={cardLabel(id)}
+              />
+              <Text style={[t.body, styles.rowLabel]} numberOfLines={1}>
+                {cardLabel(id)}
+              </Text>
+              <Switch
+                value
+                onValueChange={(v) => setShown(id, v)}
+                disabled={order.length === 1}
+                trackColor={{ true: accentColor, false: colors.elevated }}
+                thumbColor={colors.text}
+              />
+            </Animated.View>
+          );
+        })}
+
+        {order.length === 1 ? (
+          <Text style={[t.caption, styles.note]}>{T.metricsLastOne}</Text>
+        ) : null}
+
+        {hidden.length > 0 ? (
+          <>
+            <Text style={[t.label, styles.hiddenTitle]}>{T.metricsHiddenTitle}</Text>
+            {hidden.map((id) => (
+              <View key={id} style={styles.row}>
+                <View style={styles.handleSpacer} />
+                <Text style={[t.body, styles.rowLabel, { color: colors.secondary }]} numberOfLines={1}>
                   {cardLabel(id)}
                 </Text>
                 <Switch
-                  value
+                  value={false}
                   onValueChange={(v) => setShown(id, v)}
-                  disabled={order.length === 1}
                   trackColor={{ true: accentColor, false: colors.elevated }}
                   thumbColor={colors.text}
                 />
-              </Animated.View>
-            );
-          })}
-
-          {order.length === 1 ? (
-            <Text style={[t.caption, styles.note]}>{T.metricsLastOne}</Text>
-          ) : null}
-
-          {hidden.length > 0 ? (
-            <>
-              <Text style={[t.label, styles.hiddenTitle]}>{T.metricsHiddenTitle}</Text>
-              {hidden.map((id) => (
-                <View key={id} style={styles.row}>
-                  <View style={styles.handleSpacer} />
-                  <Text style={[t.body, styles.rowLabel, { color: colors.secondary }]} numberOfLines={1}>
-                    {cardLabel(id)}
-                  </Text>
-                  <Switch
-                    value={false}
-                    onValueChange={(v) => setShown(id, v)}
-                    trackColor={{ true: accentColor, false: colors.elevated }}
-                    thumbColor={colors.text}
-                  />
-                </View>
-              ))}
-            </>
-          ) : null}
-        </ScrollView>
-      </View>
-    </Modal>
+              </View>
+            ))}
+          </>
+        ) : null}
+      </ScrollView>
+    </BottomSheet>
   );
 }
 
@@ -217,10 +218,6 @@ function DragHandle({
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-  },
   sheet: {
     maxHeight: '82%',
     backgroundColor: colors.surface,
