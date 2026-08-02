@@ -6,6 +6,7 @@ import { SymbolView } from 'expo-symbols';
 import { useCallback, useEffect, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { ScreenBackground } from '@/components/screen-background';
 import { T } from '@/lib/i18n';
 import { PrefsProvider, usePrefs } from '@/lib/prefs-context';
 import { colors, radius, ThemeProvider, type as t, useTheme } from '@/lib/theme';
@@ -37,28 +38,40 @@ function Gate() {
 
   const locked = prefs.setupDone && prefs.biometricLock && !unlocked;
 
+  // Arka plan görseli tüm gezinme ağacının altında tek sefer asılır; ekranlar
+  // kendi zeminlerini şeffaf bırakıp üstünde çizilir. Modal olarak açılan
+  // add-project bunun istisnası — o kendi zeminini kendi kurar.
   return (
     <ThemeProvider initialAccent={prefs.accent} onAccentChange={onAccentChange}>
       <StatusBar style="light" />
-      {locked ? (
-        <LockScreen onUnlocked={() => setUnlocked(true)} />
-      ) : (
-        <Stack
-          screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}
-        >
-          {/* Redirect yerine guard: '/' çakışması yaratmadan onboarding ⇄ tabs geçişi. */}
-          <Stack.Protected guard={prefs.setupDone}>
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen name="add-project" options={{ presentation: 'modal' }} />
-          </Stack.Protected>
-          <Stack.Protected guard={!prefs.setupDone}>
-            <Stack.Screen name="onboarding" />
-          </Stack.Protected>
-        </Stack>
-      )}
+      <View style={styles.root}>
+        <ScreenBackground />
+        {locked ? (
+          <LockScreen onUnlocked={() => setUnlocked(true)} />
+        ) : (
+          <Stack
+            screenOptions={{ headerShown: false, contentStyle: { backgroundColor: 'transparent' } }}
+          >
+            {/* Redirect yerine guard: '/' çakışması yaratmadan onboarding ⇄ tabs geçişi. */}
+            <Stack.Protected guard={prefs.setupDone}>
+              <Stack.Screen name="(tabs)" />
+              <Stack.Screen name="add-project" options={{ presentation: 'modal' }} />
+            </Stack.Protected>
+            <Stack.Protected guard={!prefs.setupDone}>
+              <Stack.Screen name="onboarding" />
+            </Stack.Protected>
+          </Stack>
+        )}
+      </View>
     </ThemeProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
+});
 
 // Kilit açılmadan panel içeriği hiç mount edilmez.
 function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
@@ -108,7 +121,7 @@ function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
 const lockStyles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 32,

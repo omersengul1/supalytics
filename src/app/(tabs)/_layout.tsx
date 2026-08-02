@@ -2,13 +2,13 @@ import { Tabs } from 'expo-router';
 
 import { GlassTabBar } from '@/components/glass-tab-bar';
 import { T } from '@/lib/i18n';
-import { colors } from '@/lib/theme';
 
 export default function TabsLayout() {
   return (
+    // Sahne zemini şeffaf: kök düzendeki arka plan görseli sekmelerin altında görünür.
     <Tabs
       tabBar={(props) => <GlassTabBar {...props} />}
-      screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: colors.bg } }}
+      screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: 'transparent' } }}
     >
       <Tabs.Screen name="index" options={{ title: T.tabOverview }} />
       <Tabs.Screen name="users" options={{ title: T.tabUsers }} />

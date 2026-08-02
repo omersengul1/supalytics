@@ -18,6 +18,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { SetupGuide } from '@/components/setup-guide';
+import { Wordmark } from '@/components/wordmark';
 import { T } from '@/lib/i18n';
 import { wipeEverything, type MetricKey } from '@/lib/prefs';
 import { usePrefs } from '@/lib/prefs-context';
@@ -196,7 +197,10 @@ export default function Settings() {
       </Section>
 
       <View style={styles.footer}>
-        <Text style={t.caption}>supalytics v{Constants.expoConfig?.version ?? '1.0.0'}</Text>
+        <View style={styles.footerBrand}>
+          <Wordmark height={13} />
+          <Text style={t.caption}>v{Constants.expoConfig?.version ?? '1.0.0'}</Text>
+        </View>
         <Pressable onPress={() => Linking.openURL(GITHUB_URL)} hitSlop={8}>
           <Text style={[t.caption, { color: accentColor }]}>GitHub</Text>
         </Pressable>
@@ -326,7 +330,7 @@ function Row({
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: 'transparent',
   },
   content: {
     paddingHorizontal: 20,
@@ -382,9 +386,15 @@ const styles = StyleSheet.create({
   },
   footer: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 4,
     marginTop: 4,
+  },
+  footerBrand: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   modal: {
     flex: 1,

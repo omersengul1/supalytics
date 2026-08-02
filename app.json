@@ -8,14 +8,12 @@
     "scheme": "supalytics",
     "userInterfaceStyle": "dark",
     "ios": {
-      "icon": "./assets/expo.icon",
       "supportsTablet": false
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#0A0C0F",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false

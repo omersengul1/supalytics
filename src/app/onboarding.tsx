@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Field, PrimaryButton } from '@/components/form';
 import { SetupGuide } from '@/components/setup-guide';
+import { Wordmark } from '@/components/wordmark';
 import { T } from '@/lib/i18n';
 import { usePrefs } from '@/lib/prefs-context';
 import type { MetricKey } from '@/lib/prefs';
@@ -113,7 +114,7 @@ export default function Onboarding() {
         <Animated.View key={step} entering={FadeInDown.duration(280)} style={styles.step}>
           {step === 'manifesto' && (
             <>
-              <Text style={styles.wordmark}>supalytics</Text>
+              <Wordmark height={26} style={styles.wordmark} />
               <Text style={styles.headline}>{T.manifestoHeadline}</Text>
               <Text style={[t.body, { color: colors.secondary, lineHeight: 24 }]}>
                 {T.manifestoBody}
@@ -373,7 +374,7 @@ function SelectRow({
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: 'transparent',
   },
   topBar: {
     paddingHorizontal: 20,
@@ -393,10 +394,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   wordmark: {
-    ...t.caption,
-    color: colors.tertiary,
-    letterSpacing: 3,
-    textTransform: 'lowercase',
+    marginBottom: 4,
   },
   headline: {
     fontSize: 40,

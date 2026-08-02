@@ -10,6 +10,7 @@ import { UserProfileSheet } from '@/components/user-profile-sheet';
 import { ProjectSwitcher } from '@/components/project-switcher';
 import { PulseDot } from '@/components/pulse-dot';
 import { Sparkline } from '@/components/sparkline';
+import { Wordmark } from '@/components/wordmark';
 import {
   fetchActivity,
   fetchDauSeries,
@@ -268,7 +269,7 @@ export default function Overview() {
       }
     >
       <View style={styles.topRow}>
-        <Text style={styles.wordmark}>supalytics</Text>
+        <Wordmark height={20} />
         <ProjectSwitcher />
       </View>
 
@@ -367,7 +368,7 @@ export default function Overview() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: 'transparent',
   },
   content: {
     paddingHorizontal: 20,
@@ -377,11 +378,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 28,
-  },
-  wordmark: {
-    ...t.caption,
-    color: colors.tertiary,
-    letterSpacing: 3,
   },
   hero: {
     marginBottom: 28,

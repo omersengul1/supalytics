@@ -13,6 +13,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Field, PrimaryButton } from '@/components/form';
+import { ScreenBackground } from '@/components/screen-background';
 import { T } from '@/lib/i18n';
 import { usePrefs } from '@/lib/prefs-context';
 import { projectUrlFromKey } from '@/lib/supabase';
@@ -53,6 +54,8 @@ export default function AddProject() {
       style={styles.screen}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
+      {/* Modal olarak açıldığı için kök düzendeki arka planı görmez: kendi zeminini kurar. */}
+      <ScreenBackground />
       <View style={[styles.header, { paddingTop: Platform.OS === 'ios' ? 18 : insets.top + 12 }]}>
         <Text style={t.title}>{T.addProjectTitle}</Text>
         <Pressable onPress={() => router.back()} hitSlop={10}>
