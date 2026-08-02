@@ -4,6 +4,10 @@ import type { TextStyle } from 'react-native';
 export const colors = {
   bg: '#0A0C0F',
   surface: '#14171C',
+  // surface'in %72'si. Arka plan görselinin üstünde duran kartlar bunu kullanır;
+  // doku hafifçe geçer. Üstünde zemin olmayan katmanlar (alt sayfalar, modallar)
+  // okunaklılık için opak surface'te kalır.
+  surfaceGlass: 'rgba(20,23,28,0.72)',
   elevated: '#1B2027',
   hairline: 'rgba(255,255,255,0.07)',
   text: '#F4F6F8',

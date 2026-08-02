@@ -221,7 +221,7 @@ const styles = StyleSheet.create({
   },
   segment: {
     flexDirection: 'row',
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceGlass,
     borderRadius: radius.control,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.hairline,
@@ -235,7 +235,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.control - 3,
   },
   card: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceGlass,
     borderRadius: radius.card,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.hairline,

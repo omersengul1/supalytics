@@ -214,7 +214,7 @@ const styles = StyleSheet.create({
   search: {
     marginHorizontal: 20,
     marginBottom: 12,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceGlass,
     borderRadius: radius.control,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.hairline,

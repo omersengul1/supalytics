@@ -405,7 +405,7 @@ const styles = StyleSheet.create({
     flexBasis: '100%',
   },
   listCard: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceGlass,
     borderRadius: radius.card,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.hairline,

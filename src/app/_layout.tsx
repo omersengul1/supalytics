@@ -1,3 +1,4 @@
+import { DarkTheme, ThemeProvider as NavigationThemeProvider } from '@react-navigation/native';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
@@ -12,6 +13,22 @@ import { PrefsProvider, usePrefs } from '@/lib/prefs-context';
 import { colors, radius, ThemeProvider, type as t, useTheme } from '@/lib/theme';
 
 SplashScreen.preventAutoHideAsync();
+
+// expo-router varsayılan olarak React Navigation'ın AÇIK temasını sağlar ve
+// navigatörler sahne zeminini oradan alır (background: rgb(242,242,242)) — bu da
+// arka plan görselimizin üstünü örter. Zemini şeffafa çekiyoruz ki her navigatörün
+// sahnesi kök düzendeki görseli göstersin; renkleri de kendi paletimize bağlıyoruz.
+const navigationTheme = {
+  ...DarkTheme,
+  colors: {
+    ...DarkTheme.colors,
+    background: 'transparent',
+    card: colors.surface,
+    text: colors.text,
+    border: colors.hairline,
+    notification: colors.danger,
+  },
+};
 
 export default function RootLayout() {
   return (
@@ -43,26 +60,28 @@ function Gate() {
   // add-project bunun istisnası — o kendi zeminini kendi kurar.
   return (
     <ThemeProvider initialAccent={prefs.accent} onAccentChange={onAccentChange}>
-      <StatusBar style="light" />
-      <View style={styles.root}>
-        <ScreenBackground />
-        {locked ? (
-          <LockScreen onUnlocked={() => setUnlocked(true)} />
-        ) : (
-          <Stack
-            screenOptions={{ headerShown: false, contentStyle: { backgroundColor: 'transparent' } }}
-          >
-            {/* Redirect yerine guard: '/' çakışması yaratmadan onboarding ⇄ tabs geçişi. */}
-            <Stack.Protected guard={prefs.setupDone}>
-              <Stack.Screen name="(tabs)" />
-              <Stack.Screen name="add-project" options={{ presentation: 'modal' }} />
-            </Stack.Protected>
-            <Stack.Protected guard={!prefs.setupDone}>
-              <Stack.Screen name="onboarding" />
-            </Stack.Protected>
-          </Stack>
-        )}
-      </View>
+      <NavigationThemeProvider value={navigationTheme}>
+        <StatusBar style="light" />
+        <View style={styles.root}>
+          <ScreenBackground />
+          {locked ? (
+            <LockScreen onUnlocked={() => setUnlocked(true)} />
+          ) : (
+            <Stack
+              screenOptions={{ headerShown: false, contentStyle: { backgroundColor: 'transparent' } }}
+            >
+              {/* Redirect yerine guard: '/' çakışması yaratmadan onboarding ⇄ tabs geçişi. */}
+              <Stack.Protected guard={prefs.setupDone}>
+                <Stack.Screen name="(tabs)" />
+                <Stack.Screen name="add-project" options={{ presentation: 'modal' }} />
+              </Stack.Protected>
+              <Stack.Protected guard={!prefs.setupDone}>
+                <Stack.Screen name="onboarding" />
+              </Stack.Protected>
+            </Stack>
+          )}
+        </View>
+      </NavigationThemeProvider>
     </ThemeProvider>
   );
 }

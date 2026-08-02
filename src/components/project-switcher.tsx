@@ -99,7 +99,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.hairline,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceGlass,
     paddingHorizontal: 12,
     paddingVertical: 6,
   },

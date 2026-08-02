@@ -1,16 +1,13 @@
+import type { MaterialTopTabBarProps } from '@react-navigation/material-top-tabs';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
-import { Tabs } from 'expo-router';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
-import type { ComponentProps } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, radius, useTheme } from '@/lib/theme';
 
-// expo-router'da BottomTabBarProps `@react-navigation/bottom-tabs`ten import
-// edilemiyor (expo-router vendorladı); tipi Tabs bileşeninden söküyoruz.
-type TabBarProps = Parameters<NonNullable<ComponentProps<typeof Tabs>['tabBar']>>[0];
+type TabBarProps = MaterialTopTabBarProps;
 
 const ICONS: Record<string, { symbol: SFSymbol; fallback: string }> = {
   index: { symbol: 'chart.bar.fill', fallback: '▦' },
@@ -19,7 +16,7 @@ const ICONS: Record<string, { symbol: SFSymbol; fallback: string }> = {
   settings: { symbol: 'gearshape.fill', fallback: '⚙︎' },
 };
 
-export function GlassTabBar({ state, descriptors, navigation }: TabBarProps) {
+export function GlassTabBar({ state, descriptors, navigation, jumpTo }: TabBarProps) {
   const { accentColor } = useTheme();
   const insets = useSafeAreaInsets();
 
@@ -38,7 +35,9 @@ export function GlassTabBar({ state, descriptors, navigation }: TabBarProps) {
           });
           if (!focused && !event.defaultPrevented) {
             Haptics.selectionAsync();
-            navigation.navigate(route.name, route.params);
+            // jumpTo route.key bekler (içeride routes.findIndex(r => r.key === key)
+            // yapıyor) — route.name geçilirse -1 bulur ve sessizce hiçbir şey olmaz.
+            jumpTo(route.key);
           }
         };
         return (
@@ -89,7 +88,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   dockFallback: {
-    backgroundColor: 'rgba(20,23,28,0.72)',
+    backgroundColor: colors.surfaceGlass,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.hairline,
   },

@@ -101,7 +101,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   whyCard: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceGlass,
     borderRadius: radius.card,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.hairline,

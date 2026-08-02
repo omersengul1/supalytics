@@ -44,6 +44,7 @@ export default function Onboarding() {
 
   const [url, setUrl] = useState('');
   const [anonKey, setAnonKey] = useState('');
+  const [label, setLabel] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [connecting, setConnecting] = useState(false);
@@ -79,7 +80,7 @@ export default function Onboarding() {
     setConnectError(null);
     try {
       // Doğrulama + giriş + admin kanıtı + kayıt tek yerde: prefs-context.
-      await connectProject({ url, anonKey, email, password });
+      await connectProject({ url, anonKey, email, password, label });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       advance();
     } catch (e) {
@@ -209,6 +210,17 @@ export default function Onboarding() {
                   {T.whereFindBody}
                 </Text>
               </View>
+              {/* Supabase'in gösterdiği proje adı yalnızca Management API'de duruyor ve
+                  kişisel erişim jetonu istiyor — anon anahtarıyla çekilemez. Sormazsak
+                  etiket URL'deki ref'e (ör. cwcksfgjjneug) düşer, o yüzden burada soruyoruz. */}
+              <Field
+                label={T.fieldProjectName}
+                help={T.fieldProjectNameHelp}
+                value={label}
+                onChangeText={setLabel}
+                placeholder={T.fieldProjectNamePlaceholder}
+                maxLength={40}
+              />
               <Field
                 label={T.fieldAnon}
                 help={T.fieldAnonHelp}
@@ -417,7 +429,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   card: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceGlass,
     borderRadius: radius.card,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.hairline,
@@ -431,7 +443,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceGlass,
     borderRadius: radius.card,
     borderWidth: 1,
     borderColor: colors.hairline,
