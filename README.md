@@ -71,9 +71,11 @@ Hiçbir şey bağlamadan tüm arayüz deterministik sahte veriyle gezilebilir (s
 - Arşivlenen giriş kayıtlarındaki `user_agent`, giriş anına yakın `auth.sessions` kaydından alınır; oturum arşivden önce silindiyse cihaz "Bilinmiyor" düşer.
 - "Aktif" tanımı: `login` veya `token_refreshed` olayı.
 
-<img width="471" height="990" alt="125125" src="https://github.com/user-attachments/assets/cf043c8a-3b0f-4a5b-aba1-9615ead516ea" />
-<img width="485" height="990" alt="12412" src="https://github.com/user-attachments/assets/10275c3f-45c2-491a-aa1a-dca45b7257cb" />
-<img width="471" height="990" alt="1231241" src="https://github.com/user-attachments/assets/b9b6ed5c-0378-4bba-b55a-2dc3b01b26d8" />
+<p align="center">
+  <img width="32%" alt="125125" src="https://github.com/user-attachments/assets/cf043c8a-3b0f-4a5b-aba1-9615ead516ea" />
+  <img width="32%" alt="12412" src="https://github.com/user-attachments/assets/10275c3f-45c2-491a-aa1a-dca45b7257cb" />
+  <img width="32%" alt="1231241" src="https://github.com/user-attachments/assets/b9b6ed5c-0378-4bba-b55a-2dc3b01b26d8" />
+</p>
 
 
 ## Katkı ve lisans
