@@ -19,6 +19,12 @@ Sunucu yok. Telemetri yok. `service_role` yok. Arayüz telefon diline göre otom
 
 Supabase'in yönetim API'sine OAuth ile bağlanmak teknik olarak mümkün; ama o token **tüm organizasyonlarınızdaki tüm projelere** (service_role anahtarlarını çekmek dahil) yönetim erişimi verir — telefonda durmaması gereken ikinci bir tanrı anahtarıdır ve ayrıca kendi OAuth uygulamanızı kaydetmenizi gerektirir. supalytics bunun yerine proje başına `anon` anahtar + admin oturumu ister ve çoklu projeyi uygulama içindeki seçiciyle çözer: aynı düşük yetkili model, daha az kurulum.
 
+<p align="center">
+  <img width="32%" alt="12412" src="https://github.com/user-attachments/assets/10275c3f-45c2-491a-aa1a-dca45b7257cb" />
+  <img width="32%" alt="1231241" src="https://github.com/user-attachments/assets/b9b6ed5c-0378-4bba-b55a-2dc3b01b26d8" />
+  <img width="32%" alt="125125" src="https://github.com/user-attachments/assets/cf043c8a-3b0f-4a5b-aba1-9615ead516ea" />
+</p>
+
 ## Kurulum
 
 ```bash
@@ -70,12 +76,6 @@ Hiçbir şey bağlamadan tüm arayüz deterministik sahte veriyle gezilebilir (s
 - `expo-secure-store` Android'de 2048 bayttan büyük değerlerde uyarı verir; Supabase oturum JSON'u büyüyebilir. Şimdilik çalışır; v2'de oturum şifreli depolamaya taşınabilir.
 - Arşivlenen giriş kayıtlarındaki `user_agent`, giriş anına yakın `auth.sessions` kaydından alınır; oturum arşivden önce silindiyse cihaz "Bilinmiyor" düşer.
 - "Aktif" tanımı: `login` veya `token_refreshed` olayı.
-
-<p align="center">
-  <img width="32%" alt="12412" src="https://github.com/user-attachments/assets/10275c3f-45c2-491a-aa1a-dca45b7257cb" />
-  <img width="32%" alt="1231241" src="https://github.com/user-attachments/assets/b9b6ed5c-0378-4bba-b55a-2dc3b01b26d8" />
-  <img width="32%" alt="125125" src="https://github.com/user-attachments/assets/cf043c8a-3b0f-4a5b-aba1-9615ead516ea" />
-</p>
 
 
 ## Katkı ve lisans
