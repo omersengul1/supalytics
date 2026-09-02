@@ -1,14 +1,20 @@
 {
   "expo": {
-    "name": "supalytics",
+    "name": "Supalytics",
     "slug": "supalytics",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/appstore.png",
     "scheme": "supalytics",
     "userInterfaceStyle": "dark",
     "ios": {
-      "supportsTablet": false
+      "supportsTablet": false,
+      "bundleIdentifier": "com.supalytics.app",
+      "buildNumber": "1",
+      "infoPlist": {
+        "CFBundleDisplayName": "Supalytics",
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -38,7 +44,12 @@
           "configureAndroidBackup": false
         }
       ],
-      "expo-local-authentication",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Supalytics uses Face ID to unlock the dashboard and protect your Supabase connection credentials."
+        }
+      ],
       "expo-localization"
     ],
     "experiments": {
